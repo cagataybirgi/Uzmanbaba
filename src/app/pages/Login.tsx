@@ -177,9 +177,12 @@ export function Login() {
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium text-gray-700">Şifre</label>
-                <button type="button" className="text-orange-500 hover:text-orange-600 text-xs font-medium">
+                <Link
+                  to="/forgot-password"
+                  className="text-orange-500 hover:text-orange-600 text-xs font-medium rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
+                >
                   Şifremi Unuttum?
-                </button>
+                </Link>
               </div>
               <div className="relative">
                 <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />

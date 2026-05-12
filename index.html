@@ -1,16 +1,118 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f97316" />
 
-  <!DOCTYPE html>
-  <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>UzmanBaba</title>
-      <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
-    </head>
+    <!-- ===== Primary SEO ===== -->
+    <title>UzmanBaba — Türkiye'nin Güvenilir Uzman Platformu</title>
+    <meta
+      name="description"
+      content="Türkiye'nin her köşesinde doğrulanmış uzmanlar. Temizlik, tesisat, elektrik, nakliyat ve daha fazlası — güvenle bul, hemen rezerve et. Baba sorunu çözer."
+    />
+    <meta
+      name="keywords"
+      content="uzman bulma, yerel hizmetler, tesisatçı, elektrikçi, temizlik, nakliyat, boyacı, marangoz, klima servisi, ev tamiri, Türkiye"
+    />
+    <meta name="author" content="UzmanBaba" />
+    <meta name="robots" content="index, follow" />
 
-    <body>
-      <div id="root"></div>
-      <script type="module" src="/src/main.tsx"></script>
-    </body>
-  </html>
-  
+    <!-- TODO: replace https://uzmanbaba.com with your real production domain -->
+    <link rel="canonical" href="https://uzmanbaba.com/" />
+
+    <!-- ===== Open Graph (Facebook, LinkedIn, WhatsApp, etc.) ===== -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="UzmanBaba" />
+    <meta property="og:locale" content="tr_TR" />
+    <meta property="og:url" content="https://uzmanbaba.com/" />
+    <meta property="og:title" content="UzmanBaba — Türkiye'nin Güvenilir Uzman Platformu" />
+    <meta
+      property="og:description"
+      content="Doğrulanmış uzmanlar, güvenli ödeme, garantili memnuniyet. Temizlikten tesisata kapınıza kadar hizmet."
+    />
+    <!-- TODO: add /public/og-image.png (1200x630, ~JPG or PNG, under 1MB) -->
+    <meta property="og:image" content="https://uzmanbaba.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="UzmanBaba — Baba sorunu çözer" />
+
+    <!-- ===== Twitter / X Card ===== -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="UzmanBaba — Türkiye'nin Güvenilir Uzman Platformu" />
+    <meta
+      name="twitter:description"
+      content="Doğrulanmış uzmanlar, güvenli ödeme, garantili memnuniyet. Baba sorunu çözer."
+    />
+    <meta name="twitter:image" content="https://uzmanbaba.com/og-image.png" />
+    <meta name="twitter:image:alt" content="UzmanBaba — Baba sorunu çözer" />
+    <!-- TODO: add your Twitter handle if you have one, e.g. @uzmanbaba -->
+    <!-- <meta name="twitter:site" content="@uzmanbaba" /> -->
+
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      #root {
+        height: 100%;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="root"></div>
+
+    <!-- ===== Fallback for users with JavaScript disabled ===== -->
+    <noscript>
+      <div
+        style="
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 24px;
+          font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+          background: linear-gradient(135deg, #fff7ed 0%, #ffffff 50%, #fff7ed 100%);
+          color: #111827;
+        "
+      >
+        <div style="max-width: 480px; text-align: center;">
+          <div
+            style="
+              display: inline-block;
+              background: #f97316;
+              color: #ffffff;
+              font-weight: 800;
+              font-size: 22px;
+              padding: 6px 14px;
+              border-radius: 10px;
+              letter-spacing: -0.02em;
+              margin-bottom: 24px;
+            "
+          >
+            Uzman<span style="color: #fed7aa;">Baba</span>
+          </div>
+          <h1 style="font-size: 24px; font-weight: 800; margin: 0 0 12px;">
+            Bu site için JavaScript gerekli
+          </h1>
+          <p style="color: #6b7280; font-size: 16px; line-height: 1.5; margin: 0 0 16px;">
+            UzmanBaba'yı kullanabilmek için tarayıcınızda JavaScript'in etkin
+            olması gerekiyor.
+          </p>
+          <p style="color: #6b7280; font-size: 14px; line-height: 1.5; margin: 0;">
+            Lütfen tarayıcı ayarlarınızdan JavaScript'i etkinleştirin ve sayfayı
+            yenileyin. Yardıma ihtiyacınız varsa
+            <a href="mailto:destek@uzmanbaba.com" style="color: #f97316; font-weight: 600;"
+              >destek@uzmanbaba.com</a
+            >
+            adresinden bize ulaşabilirsiniz.
+          </p>
+        </div>
+      </div>
+    </noscript>
+
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
