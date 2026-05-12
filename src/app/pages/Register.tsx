@@ -416,8 +416,8 @@ export function Register() {
                   <input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)}
                     className="w-4 h-4 mt-0.5 rounded border-gray-300 accent-orange-500 flex-shrink-0" />
                   <span className="text-sm text-gray-600 leading-relaxed">
-                    <a href="#" className="text-orange-500 hover:underline font-medium">Kullanım Şartları</a>'nı ve{" "}
-                    <a href="#" className="text-orange-500 hover:underline font-medium">Gizlilik Politikası</a>'nı okudum, kabul ediyorum.
+                    <Link to="/sartlar" className="text-orange-500 hover:underline font-medium">Kullanım Şartları</Link>'nı ve{" "}
+                    <Link to="/gizlilik" className="text-orange-500 hover:underline font-medium">Gizlilik Politikası</Link>'nı okudum, kabul ediyorum.
                   </span>
                 </label>
                 {errors.terms && touched.terms && <ErrorMsg msg={errors.terms} />}

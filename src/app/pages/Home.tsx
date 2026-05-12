@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { Search, Wrench, Truck, Sparkles, ArrowRight } from "lucide-react";
 import { ProfessionalCard, type Professional } from "../components/ProfessionalCard";
 import { BookingModal } from "../components/BookingModal";
+import { TURKISH_CITIES } from "../data/cities";
 
 const FEATURED_PROS: Professional[] = [
   {
@@ -77,14 +78,18 @@ const HOW_IT_WORKS = [
 ];
 
 export function Home() {
-  const [query, setQuery] = useState("");
+  const [selectedCity, setSelectedCity] = useState("Tümü");
+  const [serviceQuery, setServiceQuery] = useState("");
   const [selectedPro, setSelectedPro] = useState<Professional | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const navigate = useNavigate();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    navigate(`/search?q=${encodeURIComponent(query)}`);
+    const params = new URLSearchParams();
+    if (selectedCity !== "Tümü") params.append("city", selectedCity);
+    if (serviceQuery.trim()) params.append("service", serviceQuery.trim());
+    navigate(`/search?${params.toString()}`);
   };
 
   const handleBook = (pro: Professional) => {
@@ -110,8 +115,21 @@ export function Home() {
 
           <form
             onSubmit={handleSearch}
-            className="flex w-full max-w-xl gap-2 mt-2"
+            className="flex flex-col sm:flex-row w-full max-w-2xl gap-2 mt-2 bg-white p-2 rounded-2xl shadow-lg border border-gray-100"
           >
+            {/* City Select */}
+            <select
+              value={selectedCity}
+              onChange={(e) => setSelectedCity(e.target.value)}
+              className="border-0 bg-transparent px-4 py-3 text-sm focus:outline-none focus:ring-0 sm:border-r border-gray-200 min-w-[140px] text-gray-700"
+            >
+              <option value="Tümü">Tüm Türkiye</option>
+              {TURKISH_CITIES.map((city) => (
+                <option key={city} value={city}>{city}</option>
+              ))}
+            </select>
+
+            {/* Service Input */}
             <div className="relative flex-1">
               <Search
                 size={18}
@@ -119,15 +137,17 @@ export function Home() {
               />
               <input
                 type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Temizlik, tesisat, nakliye ara..."
-                className="w-full border border-gray-300 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
+                value={serviceQuery}
+                onChange={(e) => setServiceQuery(e.target.value)}
+                placeholder="Hangi hizmete ihtiyacın var? (Örn: Tesisat)"
+                className="w-full border-0 bg-transparent pl-10 pr-4 py-3 text-sm focus:outline-none focus:ring-0"
               />
             </div>
+            
+            {/* Submit Button */}
             <button
               type="submit"
-              className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-6 py-3 rounded-xl text-sm transition-colors whitespace-nowrap"
+              className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-3 rounded-xl text-sm transition-colors whitespace-nowrap"
             >
               Ara
             </button>
@@ -138,7 +158,10 @@ export function Home() {
             {["Temizlik", "Tesisat", "Nakliyat", "Elektrik"].map((s) => (
               <button
                 key={s}
-                onClick={() => navigate(`/search?q=${s}`)}
+                type="button"
+                onClick={() => {
+                  navigate(`/search?service=${s}`);
+                }}
                 className="text-orange-500 hover:underline mx-1"
               >
                 {s}
@@ -159,7 +182,7 @@ export function Home() {
               <div
                 key={svc.title}
                 className="border border-gray-100 rounded-2xl p-6 hover:shadow-md transition-shadow cursor-pointer group"
-                onClick={() => navigate(`/search?q=${svc.title}`)}
+                onClick={() => navigate(`/search?service=${svc.title}`)}
               >
                 <div
                   className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${svc.color}`}

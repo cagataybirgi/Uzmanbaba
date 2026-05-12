@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useSearchParams } from "react-router";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/select";
+import { Input } from "../components/input";
+import { TURKISH_CITIES } from "../data/cities";
 import { ProfessionalCard, type Professional } from "../components/ProfessionalCard";
 import { BookingModal } from "../components/BookingModal";
 
@@ -81,24 +84,49 @@ const ITEMS_PER_PAGE = 6;
 
 export function SearchResults() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [location, setLocation] = useState("Türkiye");
-  const [searchInput, setSearchInput] = useState(searchParams.get("q") || "Tesisat");
-  const [activeQuery, setActiveQuery] = useState(searchParams.get("q") || "Tesisat");
+  
+  // 1. Read from URL instead of local state
+  const urlCity = searchParams.get("city") || "Tümü";
+  const urlService = searchParams.get("service") || "";
+
+  // 2. Local state for the inputs (so typing doesn't instantly filter until submit)
+  const [localCity, setLocalCity] = useState(urlCity);
+  const [localService, setLocalService] = useState(urlService);
+  
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedPro, setSelectedPro] = useState<Professional | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  const totalPages = Math.ceil(ALL_PROS.length / ITEMS_PER_PAGE);
-  const paginated = ALL_PROS.slice(
+  // 3. Filter the ALL_PROS array based on URL parameters
+  const filteredPros = useMemo(() => {
+    return ALL_PROS.filter((pro) => {
+      // Check City: Match if "Tümü" OR if pro.location contains the city string
+      const matchCity = urlCity === "Tümü" || pro.location.includes(urlCity);
+      
+      // Check Service: Match if empty OR if pro title/name contains the service string (case insensitive)
+      const matchService = !urlService || 
+                           pro.title.toLowerCase().includes(urlService.toLowerCase()) || 
+                           pro.name.toLowerCase().includes(urlService.toLowerCase());
+      
+      return matchCity && matchService;
+    });
+  }, [urlCity, urlService]);
+
+  const totalPages = Math.ceil(filteredPros.length / ITEMS_PER_PAGE);
+  const paginated = filteredPros.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
 
+  // 4. Update URL parameters on submit
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    setActiveQuery(searchInput);
-    setCurrentPage(1);
-    setSearchParams({ q: searchInput });
+    const params = new URLSearchParams();
+    if (localCity !== "Tümü") params.append("city", localCity);
+    if (localService.trim()) params.append("service", localService.trim());
+    
+    setSearchParams(params);
+    setCurrentPage(1); // Reset to page 1 on new search
   };
 
   const handleBook = (pro: Professional) => {
@@ -117,11 +145,12 @@ export function SearchResults() {
           >
             {/* Location dropdown */}
             <select
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
+              value={localCity}
+              onChange={(e) => setLocalCity(e.target.value)}
               className="border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white min-w-[150px]"
             >
-              {LOCATIONS.map((loc) => (
+              <option value="Tümü">Tüm Türkiye</option>
+              {TURKISH_CITIES.map((loc) => (
                 <option key={loc} value={loc}>
                   📍 {loc}
                 </option>
@@ -136,9 +165,9 @@ export function SearchResults() {
               />
               <input
                 type="text"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Hizmet ara..."
+                value={localService}
+                onChange={(e) => setLocalService(e.target.value)}
+                placeholder="Hizmet ara... (Örn: Tesisat)"
                 className="w-full border border-gray-300 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
               />
             </div>
@@ -151,7 +180,7 @@ export function SearchResults() {
             </button>
           </form>
           <p className="text-gray-400 text-xs mt-2 pl-1 capitalize">
-            {activeQuery} hizmetleri • {location}
+            {urlService || "Tüm Hizmetler"} • {urlCity}
           </p>
         </div>
       </section>
@@ -161,9 +190,9 @@ export function SearchResults() {
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-gray-900 text-xl font-bold">
-              <span className="text-orange-500">{ALL_PROS.length}</span>{" "}
-              {activeQuery} Uzmanı bulundu —{" "}
-              <span className="font-normal text-gray-500">{location}</span>
+              <span className="text-orange-500">{filteredPros.length}</span>{" "}
+              {urlService || "Hizmet"} Uzmanı bulundu —{" "}
+              <span className="font-normal text-gray-500">{urlCity}</span>
             </h2>
             <div className="flex items-center gap-2 text-sm text-gray-500">
               <span>Sırala:</span>
@@ -177,51 +206,59 @@ export function SearchResults() {
 
           {/* Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {paginated.map((pro) => (
-              <ProfessionalCard
-                key={pro.id}
-                professional={pro}
-                onBook={handleBook}
-              />
-            ))}
-          </div>
-
-          {/* Pagination */}
-          <div className="flex items-center justify-center gap-2 mt-10">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="flex items-center gap-1 px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-600 hover:border-orange-400 hover:text-orange-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft size={16} /> Önceki
-            </button>
-
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-              <button
-                key={p}
-                onClick={() => setCurrentPage(p)}
-                className={`w-9 h-9 rounded-lg text-sm font-semibold transition-colors ${
-                  currentPage === p
-                    ? "bg-orange-500 text-white"
-                    : "border border-gray-300 text-gray-600 hover:border-orange-400 hover:text-orange-500"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-
-            {totalPages > 3 && (
-              <span className="text-gray-400 text-sm px-1">...</span>
+            {paginated.length > 0 ? (
+              paginated.map((pro) => (
+                <ProfessionalCard
+                  key={pro.id}
+                  professional={pro}
+                  onBook={handleBook}
+                />
+              ))
+            ) : (
+              <p className="col-span-full text-center py-12 text-gray-500">
+                Aradığınız kriterlere uygun profesyonel bulunamadı. Lütfen filtreleri değiştirerek tekrar deneyin.
+              </p>
             )}
-
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="flex items-center gap-1 px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-600 hover:border-orange-400 hover:text-orange-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              Sonraki <ChevronRight size={16} />
-            </button>
           </div>
+
+          {/* Pagination (Only show if there are pages) */}
+          {totalPages > 0 && (
+            <div className="flex items-center justify-center gap-2 mt-10">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="flex items-center gap-1 px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-600 hover:border-orange-400 hover:text-orange-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft size={16} /> Önceki
+              </button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setCurrentPage(p)}
+                  className={`w-9 h-9 rounded-lg text-sm font-semibold transition-colors ${
+                    currentPage === p
+                      ? "bg-orange-500 text-white"
+                      : "border border-gray-300 text-gray-600 hover:border-orange-400 hover:text-orange-500"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+
+              {totalPages > 3 && (
+                <span className="text-gray-400 text-sm px-1">...</span>
+              )}
+
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="flex items-center gap-1 px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-600 hover:border-orange-400 hover:text-orange-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Sonraki <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
