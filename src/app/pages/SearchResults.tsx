@@ -1,74 +1,9 @@
-import { useState, useMemo } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
-import { Search, ChevronLeft, ChevronRight } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/select";
-import { Input } from "../components/input";
-import { TURKISH_CITIES } from "../data/cities";
+import { Search, ChevronLeft, ChevronRight, SearchX } from "lucide-react";
 import { ProfessionalCard, type Professional } from "../components/ProfessionalCard";
 import { BookingModal } from "../components/BookingModal";
-
-const ALL_PROS: Professional[] = [
-  {
-    id: 1,
-    name: "Ahmet Yılmaz",
-    title: "Sertifikalı Tesisatçı",
-    location: "Ankara, TR",
-    rating: 4.9,
-    reviews: 214,
-    available: true,
-    avatar: "https://images.unsplash.com/photo-1649769069590-268b0b994462?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYWxlJTIwcGx1bWJlciUyMHByb2Zlc3Npb25hbCUyMHBvcnRyYWl0fGVufDF8fHx8MTc3ODU4MTg3M3ww&ixlib=rb-4.1.0&q=80&w=400",
-  },
-  {
-    id: 2,
-    name: "Elif Kaya",
-    title: "Temizlik Uzmanı",
-    location: "Ankara, TR",
-    rating: 4.8,
-    reviews: 178,
-    available: true,
-    avatar: "https://images.unsplash.com/photo-1574320200624-96b6e093f695?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmZW1hbGUlMjBjbGVhbmluZyUyMHByb2Zlc3Npb25hbCUyMHBvcnRyYWl0fGVufDF8fHx8MTc3ODU4MTg3M3ww&ixlib=rb-4.1.0&q=80&w=400",
-  },
-  {
-    id: 3,
-    name: "Mehmet Demir",
-    title: "Elektrik Teknisyeni",
-    location: "İzmir, TR",
-    rating: 4.7,
-    reviews: 132,
-    available: false,
-    avatar: "https://images.unsplash.com/photo-1621905252507-b35492cc74b4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYWxlJTIwZWxlY3RyaWNpYW4lMjB3b3JrZXIlMjBwb3J0cmFpdHxlbnwxfHx8fDE3Nzg1ODE4NzN8MA&ixlib=rb-4.1.0&q=80&w=400",
-  },
-  {
-    id: 4,
-    name: "Selin Arslan",
-    title: "Boya & Badana Uzmanı",
-    location: "İstanbul, TR",
-    rating: 4.8,
-    reviews: 95,
-    available: true,
-    avatar: "https://images.unsplash.com/photo-1576323200687-e210fe495315?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmZW1hbGUlMjBwYWludGVyJTIwY29udHJhY3RvciUyMHBvcnRyYWl0fGVufDF8fHx8MTc3ODU4MTg3Nnww&ixlib=rb-4.1.0&q=80&w=400",
-  },
-  {
-    id: 5,
-    name: "Kerem Çelik",
-    title: "Marangoz & Usta",
-    location: "Bursa, TR",
-    rating: 4.6,
-    reviews: 88,
-    available: true,
-    avatar: "https://images.unsplash.com/photo-1661447133325-a4a73386b9e4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYWxlJTIwaGFuZHltYW4lMjBjYXJwZW50ZXIlMjBwb3J0cmFpdHxlbnwxfHx8fDE3Nzg1ODE4NzZ8MA&ixlib=rb-4.1.0&q=80&w=400",
-  },
-  {
-    id: 6,
-    name: "Ayşe Polat",
-    title: "Klima & Isıtma Uzmanı",
-    location: "Ankara, TR",
-    rating: 4.9,
-    reviews: 201,
-    available: true,
-    avatar: "https://images.unsplash.com/photo-1685475896056-8f5c6fb7e8a7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmZW1hbGUlMjBwcm9mZXNzaW9uYWwlMjB0ZWNobmljaWFuJTIwcG9ydHJhaXR8ZW58MXx8fHwxNzc4NTgxODc2fDA&ixlib=rb-4.1.0&q=80&w=400",
-  },
-];
+import { PROFESSIONALS } from "../../data/mockData";
 
 const LOCATIONS = [
   "Türkiye",
@@ -78,55 +13,147 @@ const LOCATIONS = [
   "Bursa",
   "Antalya",
   "Adana",
+] as const;
+
+type SortKey = "rating" | "nearest" | "availability";
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "rating", label: "En İyi Puan" },
+  { value: "nearest", label: "En Yakın" },
+  { value: "availability", label: "Müsaitlik" },
 ];
 
+const SORT_KEYS = SORT_OPTIONS.map((o) => o.value);
+
+const DEFAULT_LOCATION = "Türkiye";
+const DEFAULT_SORT: SortKey = "rating";
 const ITEMS_PER_PAGE = 6;
+
+/**
+ * Turkish-aware lowercase. Standard toLowerCase() mishandles İ → i (it
+ * produces an i-with-dot-above instead of plain i), which breaks naïve
+ * substring matching on Turkish names like "İzmir" vs "izmir".
+ */
+function normalizeTr(s: string): string {
+  return s.toLocaleLowerCase("tr-TR").trim();
+}
+
+/** Extracts city portion from "Ankara, TR" → "Ankara". */
+function cityOf(location: string): string {
+  return location.split(",")[0].trim();
+}
 
 export function SearchResults() {
   const [searchParams, setSearchParams] = useSearchParams();
-  
-  // 1. Read from URL instead of local state
-  const urlCity = searchParams.get("city") || "Tümü";
-  const urlService = searchParams.get("service") || "";
 
-  // 2. Local state for the inputs (so typing doesn't instantly filter until submit)
-  const [localCity, setLocalCity] = useState(urlCity);
-  const [localService, setLocalService] = useState(urlService);
-  
-  const [currentPage, setCurrentPage] = useState(1);
+  // ── Derived URL state (single source of truth) ─────────────────────────
+  const query = searchParams.get("q") ?? "";
+  const location = searchParams.get("location") ?? DEFAULT_LOCATION;
+  const rawSort = searchParams.get("sort") ?? DEFAULT_SORT;
+  const sort: SortKey = (SORT_KEYS as string[]).includes(rawSort)
+    ? (rawSort as SortKey)
+    : DEFAULT_SORT;
+  const rawPage = parseInt(searchParams.get("page") ?? "1", 10);
+  const requestedPage = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+
+  // ── Local UI state ─────────────────────────────────────────────────────
+  // The search input is local (uncommitted) state until the user submits.
+  // Filter chips/dropdowns commit immediately via updateParams.
+  const [searchInput, setSearchInput] = useState(query);
   const [selectedPro, setSelectedPro] = useState<Professional | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  // 3. Filter the ALL_PROS array based on URL parameters
-  const filteredPros = useMemo(() => {
-    return ALL_PROS.filter((pro) => {
-      // Check City: Match if "Tümü" OR if pro.location contains the city string
-      const matchCity = urlCity === "Tümü" || pro.location.includes(urlCity);
-      
-      // Check Service: Match if empty OR if pro title/name contains the service string (case insensitive)
-      const matchService = !urlService || 
-                           pro.title.toLowerCase().includes(urlService.toLowerCase()) || 
-                           pro.name.toLowerCase().includes(urlService.toLowerCase());
-      
-      return matchCity && matchService;
-    });
-  }, [urlCity, urlService]);
+  // Keep input synced when URL changes externally (back/forward button)
+  useEffect(() => {
+    setSearchInput(query);
+  }, [query]);
 
-  const totalPages = Math.ceil(filteredPros.length / ITEMS_PER_PAGE);
-  const paginated = filteredPros.slice(
+  // Stable IDs for label binding
+  const locationId = useId();
+  const queryId = useId();
+  const sortId = useId();
+
+  /**
+   * Writes a partial update to the URL params. Values equal to defaults
+   * (or null/empty) are dropped to keep URLs clean.
+   */
+  const updateParams = (updates: Record<string, string | null>) => {
+    const next = new URLSearchParams(searchParams);
+    for (const [key, value] of Object.entries(updates)) {
+      const isDefault =
+        (key === "location" && value === DEFAULT_LOCATION) ||
+        (key === "sort" && value === DEFAULT_SORT) ||
+        (key === "page" && value === "1");
+      if (value === null || value === "" || isDefault) {
+        next.delete(key);
+      } else {
+        next.set(key, value);
+      }
+    }
+    setSearchParams(next);
+  };
+
+  // ── Filter + sort (memoized) ───────────────────────────────────────────
+  const filtered = useMemo<Professional[]>(() => {
+    const needle = normalizeTr(query);
+    const cityFilter = location === DEFAULT_LOCATION ? null : location;
+
+    const matched = PROFESSIONALS.filter((p) => {
+      // Text match: query against name + title
+      if (needle) {
+        const haystack = `${normalizeTr(p.name)} ${normalizeTr(p.title)}`;
+        if (!haystack.includes(needle)) return false;
+      }
+      // Location match: city portion of pro.location matches selected city
+      if (cityFilter && cityOf(p.location) !== cityFilter) return false;
+      return true;
+    });
+
+    // Sort (creates a copy so we don't mutate PROFESSIONALS)
+    const sorted = [...matched];
+    switch (sort) {
+      case "rating":
+        sorted.sort((a, b) => b.rating - a.rating);
+        break;
+      case "nearest": {
+        // Without geo, interpret as: pros whose city matches the selected
+        // location come first; ties broken by rating.
+        const target = cityFilter ?? DEFAULT_LOCATION;
+        sorted.sort((a, b) => {
+          const aMatch = cityOf(a.location) === target ? 0 : 1;
+          const bMatch = cityOf(b.location) === target ? 0 : 1;
+          if (aMatch !== bMatch) return aMatch - bMatch;
+          return b.rating - a.rating;
+        });
+        break;
+      }
+      case "availability":
+        sorted.sort((a, b) => {
+          if (a.available !== b.available) return a.available ? -1 : 1;
+          return b.rating - a.rating;
+        });
+        break;
+    }
+    return sorted;
+  }, [query, location, sort]);
+
+  // ── Pagination (derived) ───────────────────────────────────────────────
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+  const currentPage = Math.min(requestedPage, totalPages);
+  const paginated = filtered.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
+    currentPage * ITEMS_PER_PAGE,
   );
 
-  // 4. Update URL parameters on submit
+  // ── Handlers ───────────────────────────────────────────────────────────
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    const params = new URLSearchParams();
-    if (localCity !== "Tümü") params.append("city", localCity);
-    if (localService.trim()) params.append("service", localService.trim());
-    
-    setSearchParams(params);
-    setCurrentPage(1); // Reset to page 1 on new search
+    updateParams({ q: searchInput.trim() || null, page: null });
+  };
+
+  const handleClearFilters = () => {
+    setSearchInput("");
+    setSearchParams(new URLSearchParams());
   };
 
   const handleBook = (pro: Professional) => {
@@ -134,109 +161,196 @@ export function SearchResults() {
     setModalOpen(true);
   };
 
+  const goToPage = (p: number) => {
+    updateParams({ page: p === 1 ? null : String(p) });
+    // Scroll the user back near the top of results on page change
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const hasActiveFilters = Boolean(query || location !== DEFAULT_LOCATION);
+
   return (
     <>
-      {/* Search Bar */}
+      {/* ── Search Bar ────────────────────────────────────────────────── */}
       <section className="bg-white border-b border-gray-200 py-4 px-4 sticky top-16 z-40 shadow-sm">
         <div className="max-w-5xl mx-auto">
           <form
             onSubmit={handleSearch}
             className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center"
           >
-            {/* Location dropdown */}
-            <select
-              value={localCity}
-              onChange={(e) => setLocalCity(e.target.value)}
-              className="border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white min-w-[150px]"
-            >
-              <option value="Tümü">Tüm Türkiye</option>
-              {TURKISH_CITIES.map((loc) => (
-                <option key={loc} value={loc}>
-                  📍 {loc}
-                </option>
-              ))}
-            </select>
+            {/* Location */}
+            <div className="flex flex-col gap-1 sm:contents">
+              <label htmlFor={locationId} className="sr-only">
+                Konum seçin
+              </label>
+              <select
+                id={locationId}
+                value={location}
+                onChange={(e) =>
+                  updateParams({ location: e.target.value, page: null })
+                }
+                className="border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white min-w-[150px]"
+              >
+                {LOCATIONS.map((loc) => (
+                  <option key={loc} value={loc}>
+                    📍 {loc}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-            {/* Search input */}
-            <div className="relative flex-1">
-              <Search
-                size={16}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-              />
-              <input
-                type="text"
-                value={localService}
-                onChange={(e) => setLocalService(e.target.value)}
-                placeholder="Hizmet ara... (Örn: Tesisat)"
-                className="w-full border border-gray-300 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-              />
+            {/* Query input */}
+            <div className="flex flex-col gap-1 flex-1">
+              <label htmlFor={queryId} className="sr-only">
+                Hizmet ara
+              </label>
+              <div className="relative">
+                <Search
+                  size={16}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  aria-hidden="true"
+                />
+                <input
+                  id={queryId}
+                  type="search"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder="Hizmet ara..."
+                  className="w-full border border-gray-300 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                />
+              </div>
             </div>
 
             <button
               type="submit"
-              className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition-colors whitespace-nowrap"
+              className="bg-orange-500 hover:bg-orange-600 active:scale-[0.98] text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition-all whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
             >
               Aramayı Güncelle
             </button>
           </form>
-          <p className="text-gray-400 text-xs mt-2 pl-1 capitalize">
-            {urlService || "Tüm Hizmetler"} • {urlCity}
+
+          {/* Active filters subtext */}
+          <p className="text-gray-400 text-xs mt-2 pl-1">
+            {query ? (
+              <>
+                <span className="capitalize">{query}</span> hizmetleri
+              </>
+            ) : (
+              "Tüm hizmetler"
+            )}{" "}
+            • {location}
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleClearFilters}
+                className="ml-3 text-orange-500 hover:text-orange-600 font-medium rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
+              >
+                Filtreleri Temizle
+              </button>
+            )}
           </p>
         </div>
       </section>
 
-      {/* Results */}
+      {/* ── Results ───────────────────────────────────────────────────── */}
       <section className="py-10 px-4">
         <div className="max-w-5xl mx-auto">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-gray-900 text-xl font-bold">
-              <span className="text-orange-500">{filteredPros.length}</span>{" "}
-              {urlService || "Hizmet"} Uzmanı bulundu —{" "}
-              <span className="font-normal text-gray-500">{urlCity}</span>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+            <h2
+              className="text-gray-900 text-xl font-bold"
+              aria-live="polite"
+            >
+              <span className="text-orange-500">{filtered.length}</span>{" "}
+              {query ? (
+                <>
+                  <span className="capitalize">{query}</span> uzmanı bulundu
+                </>
+              ) : (
+                "uzman listeleniyor"
+              )}{" "}
+              — <span className="font-normal text-gray-500">{location}</span>
             </h2>
+
             <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span>Sırala:</span>
-              <select className="border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
-                <option>En İyi Puan</option>
-                <option>En Yakın</option>
-                <option>Müsaitlik</option>
+              <label htmlFor={sortId}>Sırala:</label>
+              <select
+                id={sortId}
+                value={sort}
+                onChange={(e) =>
+                  updateParams({ sort: e.target.value, page: null })
+                }
+                className="border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+              >
+                {SORT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
 
-          {/* Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {paginated.length > 0 ? (
-              paginated.map((pro) => (
+          {/* Grid or empty state */}
+          {filtered.length === 0 ? (
+            <div className="bg-white border border-gray-100 rounded-2xl p-10 sm:p-14 flex flex-col items-center text-center gap-4 animate-fade-in-up">
+              <div className="w-16 h-16 rounded-full bg-orange-50 flex items-center justify-center">
+                <SearchX size={28} className="text-orange-500" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <h3 className="text-gray-900 text-lg font-bold">
+                  Sonuç Bulunamadı
+                </h3>
+                <p className="text-gray-500 text-sm max-w-md">
+                  {query
+                    ? `"${query}" araması ${
+                        location !== DEFAULT_LOCATION ? `${location}'da ` : ""
+                      }herhangi bir uzmanla eşleşmedi.`
+                    : `${location} bölgesinde listelenecek uzman bulunamadı.`}{" "}
+                  Farklı bir arama veya konum dene.
+                </p>
+              </div>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="bg-orange-500 hover:bg-orange-600 active:scale-[0.98] text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
+                >
+                  Filtreleri Temizle
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {paginated.map((pro) => (
                 <ProfessionalCard
                   key={pro.id}
                   professional={pro}
                   onBook={handleBook}
                 />
-              ))
-            ) : (
-              <p className="col-span-full text-center py-12 text-gray-500">
-                Aradığınız kriterlere uygun profesyonel bulunamadı. Lütfen filtreleri değiştirerek tekrar deneyin.
-              </p>
-            )}
-          </div>
+              ))}
+            </div>
+          )}
 
-          {/* Pagination (Only show if there are pages) */}
-          {totalPages > 0 && (
-            <div className="flex items-center justify-center gap-2 mt-10">
+          {/* Pagination — only when more than one page */}
+          {totalPages > 1 && (
+            <nav
+              aria-label="Sayfalar"
+              className="flex items-center justify-center gap-2 mt-10"
+            >
               <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                onClick={() => goToPage(currentPage - 1)}
                 disabled={currentPage === 1}
-                className="flex items-center gap-1 px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-600 hover:border-orange-400 hover:text-orange-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-600 hover:border-orange-400 hover:text-orange-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
               >
-                <ChevronLeft size={16} /> Önceki
+                <ChevronLeft size={16} aria-hidden="true" /> Önceki
               </button>
 
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
                 <button
                   key={p}
-                  onClick={() => setCurrentPage(p)}
-                  className={`w-9 h-9 rounded-lg text-sm font-semibold transition-colors ${
+                  onClick={() => goToPage(p)}
+                  aria-current={currentPage === p ? "page" : undefined}
+                  className={`w-9 h-9 rounded-lg text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 ${
                     currentPage === p
                       ? "bg-orange-500 text-white"
                       : "border border-gray-300 text-gray-600 hover:border-orange-400 hover:text-orange-500"
@@ -246,18 +360,14 @@ export function SearchResults() {
                 </button>
               ))}
 
-              {totalPages > 3 && (
-                <span className="text-gray-400 text-sm px-1">...</span>
-              )}
-
               <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                onClick={() => goToPage(currentPage + 1)}
                 disabled={currentPage === totalPages}
-                className="flex items-center gap-1 px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-600 hover:border-orange-400 hover:text-orange-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-600 hover:border-orange-400 hover:text-orange-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
               >
-                Sonraki <ChevronRight size={16} />
+                Sonraki <ChevronRight size={16} aria-hidden="true" />
               </button>
-            </div>
+            </nav>
           )}
         </div>
       </section>
