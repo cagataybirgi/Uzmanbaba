@@ -1,0 +1,15 @@
+node_modules
+dist
+.env
+.env.local
+.env.test
+.git
+*.log
+.DS_Store
+
+# Locally-uploaded assets — never bake user data into the image.
+uploads/
+
+# Test scaffolding doesn't ship in the runtime image.
+tests/
+vitest.config.ts

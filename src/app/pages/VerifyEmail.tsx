@@ -17,7 +17,7 @@ export function VerifyEmail() {
   const [shakeKey, setShakeKey] = useState(0);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const navigate = useNavigate();
-  const { verifyEmail, user, pendingEmail } = useAuth();
+  const { verifyEmail, resendVerification, user, pendingEmail } = useAuth();
 
   const displayEmail = pendingEmail || user?.email || "ornek@email.com";
   const maskedEmail = displayEmail.replace(/(.{2}).+(@.+)/, "$1•••$2");
@@ -86,29 +86,40 @@ export function VerifyEmail() {
       return;
     }
     setVerifying(true);
-    const success = await verifyEmail(code);
-    setVerifying(false);
-    if (success) {
-      setVerified(true);
-      setTimeout(() => navigate("/dashboard"), 1800);
-    } else {
-      setError("Hatalı kod. Tekrar deneyin.");
+    try {
+      const success = await verifyEmail(code);
+      if (success) {
+        setVerified(true);
+        setTimeout(() => navigate("/dashboard"), 1800);
+      } else {
+        setError("Hatalı kod. Tekrar deneyin.");
+        setShakeKey((k) => k + 1);
+        setDigits(Array(OTP_LENGTH).fill(""));
+        setTimeout(() => inputRefs.current[0]?.focus(), 50);
+      }
+    } catch {
+      setError("Bağlantı kurulamadı. Tekrar deneyin.");
       setShakeKey((k) => k + 1);
-      setDigits(Array(OTP_LENGTH).fill(""));
-      setTimeout(() => inputRefs.current[0]?.focus(), 50);
+    } finally {
+      setVerifying(false);
     }
   };
 
   const handleResend = async () => {
     if (countdown > 0) return;
     setResending(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    setResending(false);
-    setResent(true);
-    setCountdown(RESEND_SECONDS);
-    setDigits(Array(OTP_LENGTH).fill(""));
-    setError("");
-    setTimeout(() => { setResent(false); inputRefs.current[0]?.focus(); }, 3000);
+    try {
+      await resendVerification();
+      setResent(true);
+      setCountdown(RESEND_SECONDS);
+      setDigits(Array(OTP_LENGTH).fill(""));
+      setError("");
+      setTimeout(() => { setResent(false); inputRefs.current[0]?.focus(); }, 3000);
+    } catch {
+      setError("Kod gönderilemedi. Lütfen sonra tekrar deneyin.");
+    } finally {
+      setResending(false);
+    }
   };
 
   const progress = ((RESEND_SECONDS - countdown) / RESEND_SECONDS) * 100;
@@ -250,10 +261,6 @@ export function VerifyEmail() {
                 </div>
               </div>
 
-              {/* Hint */}
-              <p className="text-xs text-gray-400 text-center">
-                Demo için herhangi bir 6 haneli kodu girebilirsin.
-              </p>
             </div>
           </div>
         )}

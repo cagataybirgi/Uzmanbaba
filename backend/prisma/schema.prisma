@@ -1,0 +1,156 @@
+// Prisma schema for UzmanBaba.
+//
+// The shape of `User` mirrors the AuthContext User type so the API can be
+// serialized to that shape with a thin DTO mapper. Verification codes and
+// password-reset tokens live in their own tables so we can keep history,
+// invalidate older entries cleanly, and rate-limit by counting recent rows.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  customer
+  professional
+}
+
+enum BookingStatus {
+  pending     // created by the customer, awaiting confirmation
+  confirmed   // professional has confirmed
+  completed   // work done
+  cancelled   // either side cancelled
+}
+
+model User {
+  id            String      @id @default(uuid()) @db.Uuid
+  email         String      @unique
+  name          String
+  phone         String      @default("")
+  passwordHash  String
+  accountType   AccountType @default(customer)
+  emailVerified Boolean     @default(false)
+
+  avatar    String  @default("")
+  location  String  @default("")
+  specialty String?
+  bio       String?
+
+  // Professional-only fields. Safe to leave at defaults for customers — the
+  // GET /professionals endpoints scope by accountType so they're never read
+  // for non-professional users.
+  available     Boolean @default(true)
+  reviewsCount  Int     @default(0)
+
+  rating         Float? // null until first review
+  completedJobs  Int    @default(0)
+  pendingJobs    Int    @default(0)
+
+  // Notification preferences. Flat booleans rather than a JSON blob so they
+  // stay queryable (e.g. "send tonight's reminder to everyone with
+  // notifyEmail=true"). Defaults match the dashboard's initial UI state.
+  notifyEmail Boolean @default(true)
+  notifySms   Boolean @default(true)
+  notifyPush  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  verifications  EmailVerification[]
+  passwordResets PasswordReset[]
+
+  bookingsAsCustomer     Booking[] @relation("CustomerBookings")
+  bookingsAsProfessional Booking[] @relation("ProfessionalBookings")
+
+  reviewsWritten  Review[] @relation("ReviewsWritten")
+  reviewsReceived Review[] @relation("ReviewsReceived")
+
+  @@index([createdAt])
+  // Filtered indexes would be ideal here but Prisma doesn't model them yet.
+  // A plain composite index still helps the listing query.
+  @@index([accountType, available, rating])
+}
+
+// Bookings hold both denormalized display fields (`service`) and live FKs.
+// `service` snapshots the professional's specialty at create time so a later
+// rename of the professional doesn't rewrite past invoices.
+model Booking {
+  id String @id @default(uuid()) @db.Uuid
+
+  customerId     String @db.Uuid
+  customer       User   @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Cascade)
+  professionalId String @db.Uuid
+  professional   User   @relation("ProfessionalBookings", fields: [professionalId], references: [id], onDelete: Cascade)
+
+  service     String        // snapshot of professional.specialty
+  scheduledAt DateTime
+  address     String
+  description String
+  status      BookingStatus @default(pending)
+  priceCents  Int? // nullable until a quote is agreed
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  review Review?
+
+  @@index([customerId, createdAt])
+  @@index([professionalId, createdAt])
+  @@index([status])
+}
+
+// One review per booking, by the customer of that booking. We denormalize
+// `professionalId` so the reviews-for-pro listing is a single-column lookup
+// without joining through Booking.
+model Review {
+  id String @id @default(uuid()) @db.Uuid
+
+  bookingId String  @unique @db.Uuid
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  authorId String @db.Uuid
+  author   User   @relation("ReviewsWritten", fields: [authorId], references: [id], onDelete: Cascade)
+
+  professionalId String @db.Uuid
+  professional   User   @relation("ReviewsReceived", fields: [professionalId], references: [id], onDelete: Cascade)
+
+  rating  Int     // 1-5 (enforced in the service layer / zod)
+  comment String?
+
+  createdAt DateTime @default(now())
+
+  @@index([professionalId, createdAt])
+}
+
+// One row per requested email-verification code. We don't delete on success —
+// instead we mark `consumedAt` so we can rate-limit and audit. New requests
+// supersede older ones by setting `consumedAt` on them as well.
+model EmailVerification {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code       String    // plain 6-digit code, short-lived
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// Password reset uses a high-entropy token. We store its SHA-256 hash so a DB
+// leak can't be replayed against the live reset endpoint.
+model PasswordReset {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}

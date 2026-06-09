@@ -4,39 +4,9 @@ import { Search, Wrench, Truck, Sparkles, ArrowRight } from "lucide-react";
 import { ProfessionalCard, type Professional } from "../components/ProfessionalCard";
 import { BookingModal } from "../components/BookingModal";
 import { TURKISH_CITIES } from "../data/cities";
+import { useFeaturedProfessionals } from "../data/professionals";
 
-const FEATURED_PROS: Professional[] = [
-  {
-    id: 1,
-    name: "Ahmet Yılmaz",
-    title: "Sertifikalı Tesisatçı",
-    location: "Ankara, TR",
-    rating: 4.9,
-    reviews: 214,
-    available: true,
-    avatar: "https://images.unsplash.com/photo-1649769069590-268b0b994462?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYWxlJTIwcGx1bWJlciUyMHByb2Zlc3Npb25hbCUyMHBvcnRyYWl0fGVufDF8fHx8MTc3ODU4MTg3M3ww&ixlib=rb-4.1.0&q=80&w=400",
-  },
-  {
-    id: 2,
-    name: "Elif Kaya",
-    title: "Temizlik Uzmanı",
-    location: "İstanbul, TR",
-    rating: 4.8,
-    reviews: 178,
-    available: true,
-    avatar: "https://images.unsplash.com/photo-1574320200624-96b6e093f695?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmZW1hbGUlMjBjbGVhbmluZyUyMHByb2Zlc3Npb25hbCUyMHBvcnRyYWl0fGVufDF8fHx8MTc3ODU4MTg3M3ww&ixlib=rb-4.1.0&q=80&w=400",
-  },
-  {
-    id: 3,
-    name: "Mehmet Demir",
-    title: "Elektrik Teknisyeni",
-    location: "İzmir, TR",
-    rating: 4.7,
-    reviews: 132,
-    available: false,
-    avatar: "https://images.unsplash.com/photo-1621905252507-b35492cc74b4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYWxlJTIwZWxlY3RyaWNpYW4lMjB3b3JrZXIlMjBwb3J0cmFpdHxlbnwxfHx8fDE3Nzg1ODE4NzN8MA&ixlib=rb-4.1.0&q=80&w=400",
-  },
-];
+const FEATURED_LIMIT = 3;
 
 const SERVICES = [
   {
@@ -83,6 +53,7 @@ export function Home() {
   const [selectedPro, setSelectedPro] = useState<Professional | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const navigate = useNavigate();
+  const featured = useFeaturedProfessionals(FEATURED_LIMIT);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -242,13 +213,34 @@ export function Home() {
                 </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {FEATURED_PROS.map((pro) => (
-                  <ProfessionalCard
-                    key={pro.id}
-                    professional={pro}
-                    onBook={handleBook}
-                  />
-                ))}
+                {featured.loading && !featured.data
+                  ? Array.from({ length: FEATURED_LIMIT }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm animate-pulse"
+                      >
+                        <div className="h-32 bg-gray-100" />
+                        <div className="p-4 flex flex-col gap-2">
+                          <div className="h-4 bg-gray-100 rounded w-2/3 mx-auto" />
+                          <div className="h-3 bg-gray-100 rounded w-1/2 mx-auto" />
+                          <div className="h-3 bg-gray-100 rounded w-1/3 mx-auto mt-1" />
+                          <div className="h-9 bg-gray-100 rounded mt-3" />
+                        </div>
+                      </div>
+                    ))
+                  : featured.error
+                  ? (
+                      <p className="text-gray-400 text-sm col-span-full text-center py-8">
+                        Öne çıkan uzmanlar yüklenemedi.
+                      </p>
+                    )
+                  : (featured.data ?? []).map((pro) => (
+                      <ProfessionalCard
+                        key={pro.id}
+                        professional={pro}
+                        onBook={handleBook}
+                      />
+                    ))}
               </div>
             </div>
 

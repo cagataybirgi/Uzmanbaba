@@ -1,9 +1,9 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useSearchParams } from "react-router";
-import { Search, ChevronLeft, ChevronRight, SearchX } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, SearchX, AlertCircle } from "lucide-react";
 import { ProfessionalCard, type Professional } from "../components/ProfessionalCard";
 import { BookingModal } from "../components/BookingModal";
-import { PROFESSIONALS } from "../../data/mockData";
+import { useProfessionals, type SortKey } from "../data/professionals";
 
 const LOCATIONS = [
   "Türkiye",
@@ -14,8 +14,6 @@ const LOCATIONS = [
   "Antalya",
   "Adana",
 ] as const;
-
-type SortKey = "rating" | "nearest" | "availability";
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: "rating", label: "En İyi Puan" },
@@ -28,20 +26,6 @@ const SORT_KEYS = SORT_OPTIONS.map((o) => o.value);
 const DEFAULT_LOCATION = "Türkiye";
 const DEFAULT_SORT: SortKey = "rating";
 const ITEMS_PER_PAGE = 6;
-
-/**
- * Turkish-aware lowercase. Standard toLowerCase() mishandles İ → i (it
- * produces an i-with-dot-above instead of plain i), which breaks naïve
- * substring matching on Turkish names like "İzmir" vs "izmir".
- */
-function normalizeTr(s: string): string {
-  return s.toLocaleLowerCase("tr-TR").trim();
-}
-
-/** Extracts city portion from "Ankara, TR" → "Ankara". */
-function cityOf(location: string): string {
-  return location.split(",")[0].trim();
-}
 
 export function SearchResults() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -57,26 +41,18 @@ export function SearchResults() {
   const requestedPage = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
 
   // ── Local UI state ─────────────────────────────────────────────────────
-  // The search input is local (uncommitted) state until the user submits.
-  // Filter chips/dropdowns commit immediately via updateParams.
   const [searchInput, setSearchInput] = useState(query);
   const [selectedPro, setSelectedPro] = useState<Professional | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  // Keep input synced when URL changes externally (back/forward button)
   useEffect(() => {
     setSearchInput(query);
   }, [query]);
 
-  // Stable IDs for label binding
   const locationId = useId();
   const queryId = useId();
   const sortId = useId();
 
-  /**
-   * Writes a partial update to the URL params. Values equal to defaults
-   * (or null/empty) are dropped to keep URLs clean.
-   */
   const updateParams = (updates: Record<string, string | null>) => {
     const next = new URLSearchParams(searchParams);
     for (const [key, value] of Object.entries(updates)) {
@@ -93,57 +69,19 @@ export function SearchResults() {
     setSearchParams(next);
   };
 
-  // ── Filter + sort (memoized) ───────────────────────────────────────────
-  const filtered = useMemo<Professional[]>(() => {
-    const needle = normalizeTr(query);
-    const cityFilter = location === DEFAULT_LOCATION ? null : location;
+  // ── Backend-driven listing ─────────────────────────────────────────────
+  const { data, loading, error } = useProfessionals({
+    q: query || undefined,
+    city: location === DEFAULT_LOCATION ? undefined : location,
+    sort,
+    page: requestedPage,
+    pageSize: ITEMS_PER_PAGE,
+  });
 
-    const matched = PROFESSIONALS.filter((p) => {
-      // Text match: query against name + title
-      if (needle) {
-        const haystack = `${normalizeTr(p.name)} ${normalizeTr(p.title)}`;
-        if (!haystack.includes(needle)) return false;
-      }
-      // Location match: city portion of pro.location matches selected city
-      if (cityFilter && cityOf(p.location) !== cityFilter) return false;
-      return true;
-    });
-
-    // Sort (creates a copy so we don't mutate PROFESSIONALS)
-    const sorted = [...matched];
-    switch (sort) {
-      case "rating":
-        sorted.sort((a, b) => b.rating - a.rating);
-        break;
-      case "nearest": {
-        // Without geo, interpret as: pros whose city matches the selected
-        // location come first; ties broken by rating.
-        const target = cityFilter ?? DEFAULT_LOCATION;
-        sorted.sort((a, b) => {
-          const aMatch = cityOf(a.location) === target ? 0 : 1;
-          const bMatch = cityOf(b.location) === target ? 0 : 1;
-          if (aMatch !== bMatch) return aMatch - bMatch;
-          return b.rating - a.rating;
-        });
-        break;
-      }
-      case "availability":
-        sorted.sort((a, b) => {
-          if (a.available !== b.available) return a.available ? -1 : 1;
-          return b.rating - a.rating;
-        });
-        break;
-    }
-    return sorted;
-  }, [query, location, sort]);
-
-  // ── Pagination (derived) ───────────────────────────────────────────────
-  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+  const items = data?.items ?? [];
+  const totalPages = data?.totalPages ?? 1;
+  const total = data?.total ?? 0;
   const currentPage = Math.min(requestedPage, totalPages);
-  const paginated = filtered.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE,
-  );
 
   // ── Handlers ───────────────────────────────────────────────────────────
   const handleSearch = (e: React.FormEvent) => {
@@ -163,7 +101,6 @@ export function SearchResults() {
 
   const goToPage = (p: number) => {
     updateParams({ page: p === 1 ? null : String(p) });
-    // Scroll the user back near the top of results on page change
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -260,15 +197,21 @@ export function SearchResults() {
               className="text-gray-900 text-xl font-bold"
               aria-live="polite"
             >
-              <span className="text-orange-500">{filtered.length}</span>{" "}
-              {query ? (
-                <>
-                  <span className="capitalize">{query}</span> uzmanı bulundu
-                </>
+              {loading && !data ? (
+                <span className="text-gray-400">Yükleniyor…</span>
               ) : (
-                "uzman listeleniyor"
-              )}{" "}
-              — <span className="font-normal text-gray-500">{location}</span>
+                <>
+                  <span className="text-orange-500">{total}</span>{" "}
+                  {query ? (
+                    <>
+                      <span className="capitalize">{query}</span> uzmanı bulundu
+                    </>
+                  ) : (
+                    "uzman listeleniyor"
+                  )}{" "}
+                  — <span className="font-normal text-gray-500">{location}</span>
+                </>
+              )}
             </h2>
 
             <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -290,8 +233,41 @@ export function SearchResults() {
             </div>
           </div>
 
-          {/* Grid or empty state */}
-          {filtered.length === 0 ? (
+          {/* ── Error ────────────────────────────────────────────────── */}
+          {error && !loading && (
+            <div className="bg-white border border-red-100 rounded-2xl p-8 flex flex-col items-center text-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center">
+                <AlertCircle size={22} className="text-red-500" />
+              </div>
+              <p className="text-gray-800 font-semibold">{error}</p>
+              <p className="text-gray-500 text-sm">
+                Sayfayı yenileyip tekrar dene.
+              </p>
+            </div>
+          )}
+
+          {/* ── Loading skeleton ─────────────────────────────────────── */}
+          {loading && !error && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {Array.from({ length: ITEMS_PER_PAGE }).map((_, i) => (
+                <div
+                  key={i}
+                  className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm animate-pulse"
+                >
+                  <div className="h-32 bg-gray-100" />
+                  <div className="p-4 flex flex-col gap-2">
+                    <div className="h-4 bg-gray-100 rounded w-2/3 mx-auto" />
+                    <div className="h-3 bg-gray-100 rounded w-1/2 mx-auto" />
+                    <div className="h-3 bg-gray-100 rounded w-1/3 mx-auto mt-1" />
+                    <div className="h-9 bg-gray-100 rounded mt-3" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Empty ────────────────────────────────────────────────── */}
+          {!loading && !error && items.length === 0 && (
             <div className="bg-white border border-gray-100 rounded-2xl p-10 sm:p-14 flex flex-col items-center text-center gap-4 animate-fade-in-up">
               <div className="w-16 h-16 rounded-full bg-orange-50 flex items-center justify-center">
                 <SearchX size={28} className="text-orange-500" />
@@ -319,9 +295,12 @@ export function SearchResults() {
                 </button>
               )}
             </div>
-          ) : (
+          )}
+
+          {/* ── Grid ─────────────────────────────────────────────────── */}
+          {!loading && !error && items.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {paginated.map((pro) => (
+              {items.map((pro) => (
                 <ProfessionalCard
                   key={pro.id}
                   professional={pro}
@@ -332,7 +311,7 @@ export function SearchResults() {
           )}
 
           {/* Pagination — only when more than one page */}
-          {totalPages > 1 && (
+          {!loading && !error && totalPages > 1 && (
             <nav
               aria-label="Sayfalar"
               className="flex items-center justify-center gap-2 mt-10"

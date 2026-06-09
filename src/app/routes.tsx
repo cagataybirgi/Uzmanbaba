@@ -2,6 +2,7 @@ import { createBrowserRouter } from "react-router";
 import { Root } from "./Root";
 import { Home } from "./pages/Home";
 import { SearchResults } from "./pages/SearchResults";
+import { ProfessionalDetail } from "./pages/ProfessionalDetail";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
 import { VerifyEmail } from "./pages/VerifyEmail";
@@ -9,6 +10,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { NotFound } from "./pages/NotFound";
 import { ErrorBoundary } from "./pages/ErrorBoundary";
 import { ForgotPassword } from "./pages/ForgotPassword";
+import { ResetPassword } from "./pages/ResetPassword";
 import { About, Support, Contact, Terms, Privacy } from "./pages/InfoPages";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
@@ -22,10 +24,12 @@ export const router = createBrowserRouter([
     children: [
       { index: true, Component: Home },
       { path: "search", Component: SearchResults },
+      { path: "professionals/:id", Component: ProfessionalDetail },
       { path: "login", Component: Login },
       { path: "register", Component: Register },
       { path: "verify-email", Component: VerifyEmail },
       { path: "forgot-password", Component: ForgotPassword },
+      { path: "reset-password", Component: ResetPassword },
 
       // Static / informational pages
       { path: "hakkimizda", Component: About },
