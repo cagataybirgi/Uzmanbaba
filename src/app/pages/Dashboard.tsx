@@ -1,35 +1,46 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router";
 import {
   LayoutDashboard, CalendarCheck, User, Settings, LogOut,
   Star, CheckCircle, Clock, XCircle, ChevronRight, Bell,
   MapPin, Phone, Mail, Edit3, Camera, Shield, Wrench,
-  TrendingUp, Menu, X,
+  TrendingUp, Menu, AlertCircle, X, Inbox, PlayCircle,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import {
+  cancelBooking,
+  completeBooking,
+  confirmBooking,
+  useMyBookings,
+  useProfessionalBookings,
+  type Booking,
+  type BookingStatus,
+} from "../data/bookings";
+import { ReviewModal } from "../components/ReviewModal";
+import { ApiError } from "../lib/api";
+import { toast } from "../lib/toast";
 
-type Tab = "overview" | "bookings" | "profile" | "settings";
-type BookingStatus = "confirmed" | "completed" | "pending" | "cancelled";
+type Tab = "overview" | "bookings" | "incoming" | "profile" | "settings";
 
-interface Booking {
-  id: number;
-  professional: string;
-  service: string;
-  date: string;
-  time: string;
-  status: BookingStatus;
-  price: string;
-  avatar: string;
+const TR_MONTHS_SHORT = [
+  "Oca", "Şub", "Mar", "Nis", "May", "Haz",
+  "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara",
+];
+
+/** ISO → "14 May 2026" / "10:00" pair, in the user's local time. */
+function formatScheduledAt(iso: string): { date: string; time: string } {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { date: "—", time: "—" };
+  const date = `${d.getDate()} ${TR_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return { date, time: `${hh}:${mm}` };
 }
 
-const MOCK_BOOKINGS: Booking[] = [
-  { id: 1, professional: "Ahmet Yılmaz", service: "Tesisat Tamiri", date: "14 May 2026", time: "10:00", status: "confirmed", price: "₺450", avatar: "https://images.unsplash.com/photo-1649769069590-268b0b994462?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=100" },
-  { id: 2, professional: "Elif Kaya", service: "Ev Temizliği", date: "12 May 2026", time: "14:00", status: "completed", price: "₺320", avatar: "https://images.unsplash.com/photo-1574320200624-96b6e093f695?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=100" },
-  { id: 3, professional: "Mehmet Demir", service: "Elektrik Tesisatı", date: "8 May 2026", time: "09:00", status: "completed", price: "₺600", avatar: "https://images.unsplash.com/photo-1621905252507-b35492cc74b4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=100" },
-  { id: 4, professional: "Selin Arslan", service: "Boya Badana", date: "3 May 2026", time: "11:00", status: "cancelled", price: "₺750", avatar: "https://images.unsplash.com/photo-1576323200687-e210fe495315?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=100" },
-  { id: 5, professional: "Kerem Çelik", service: "Marangoz İşi", date: "18 May 2026", time: "15:00", status: "pending", price: "₺520", avatar: "https://images.unsplash.com/photo-1661447133325-a4a73386b9e4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=100" },
-  { id: 6, professional: "Ayşe Polat", service: "Klima Bakımı", date: "20 May 2026", time: "13:00", status: "confirmed", price: "₺380", avatar: "https://images.unsplash.com/photo-1685475896056-8f5c6fb7e8a7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=100" },
-];
+function formatPrice(cents: number | null): string {
+  if (cents === null) return "—";
+  return `₺${(cents / 100).toLocaleString("tr-TR")}`;
+}
 
 const STATUS_CONFIG: Record<BookingStatus, { label: string; color: string; icon: typeof CheckCircle }> = {
   confirmed: { label: "Onaylandı", color: "bg-blue-100 text-blue-700", icon: CheckCircle },
@@ -38,11 +49,18 @@ const STATUS_CONFIG: Record<BookingStatus, { label: string; color: string; icon:
   cancelled: { label: "İptal",     color: "bg-red-100 text-red-600", icon: XCircle },
 };
 
-const NAV_ITEMS: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: "overview",  label: "Özet",           icon: LayoutDashboard },
+interface NavItem {
+  id: Tab;
+  label: string;
+  icon: typeof LayoutDashboard;
+  proOnly?: boolean;
+}
+const NAV_ITEMS: NavItem[] = [
+  { id: "overview",  label: "Özet",             icon: LayoutDashboard },
   { id: "bookings",  label: "Rezervasyonlarım", icon: CalendarCheck },
-  { id: "profile",   label: "Profil",          icon: User },
-  { id: "settings",  label: "Ayarlar",         icon: Settings },
+  { id: "incoming",  label: "Gelen Talepler",   icon: Inbox, proOnly: true },
+  { id: "profile",   label: "Profil",           icon: User },
+  { id: "settings",  label: "Ayarlar",          icon: Settings },
 ];
 
 function StatusBadge({ status }: { status: BookingStatus }) {
@@ -78,10 +96,74 @@ export function Dashboard() {
   const [bookingFilter, setBookingFilter] = useState<BookingStatus | "all">("all");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [editProfile, setEditProfile] = useState(false);
-  const [notifications, setNotifications] = useState({ email: true, sms: true, push: false });
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [reviewingBooking, setReviewingBooking] = useState<Booking | null>(null);
+
+  // Professional-side actions share a "currently-mutating" id so the row
+  // buttons disable themselves while a PATCH is in flight. Errors surface
+  // via toast, not an inline banner — the row context is already obvious.
+  const [incomingFilter, setIncomingFilter] = useState<BookingStatus | "all">("all");
+  const [incomingMutatingId, setIncomingMutatingId] = useState<string | null>(null);
+
+  // Avatar upload — hidden <input type="file"> triggered by the Camera icon.
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+
+  // Notifications: toggle reads from user.notifications and writes through
+  // updateProfile. Pessimistic — the switch waits for the PATCH to land
+  // (disabled in the meantime) so it never shows a state the backend
+  // doesn't actually have.
+  const [notifsBusy, setNotifsBusy] = useState<null | "email" | "sms" | "push">(null);
+
+  // Change-password panel state. Errors stay inline (they point at the
+  // form); success becomes a toast since the form is then closed.
+  const [pwdOpen, setPwdOpen] = useState(false);
+  const [pwdCurrent, setPwdCurrent] = useState("");
+  const [pwdNew, setPwdNew] = useState("");
+  const [pwdConfirm, setPwdConfirm] = useState("");
+  const [pwdSubmitting, setPwdSubmitting] = useState(false);
+  const [pwdError, setPwdError] = useState<string | null>(null);
+
+  // Delete-account modal
+  const [delOpen, setDelOpen] = useState(false);
+  const [delPassword, setDelPassword] = useState("");
+  const [delSubmitting, setDelSubmitting] = useState(false);
+  const [delError, setDelError] = useState<string | null>(null);
+
   const navigate = useNavigate();
-  const { user, logout, updateProfile } = useAuth();
+  const {
+    user,
+    logout,
+    updateProfile,
+    uploadAvatar,
+    changePassword,
+    deleteAccount,
+  } = useAuth();
+  const bookings = useMyBookings();
+  const allBookings: Booking[] = bookings.data?.items ?? [];
+
+  const isPro = user?.accountType === "professional";
+  // Incoming-bookings hook fires for everyone but the tab only renders for
+  // professionals. The fetch itself is cheap (one query, scoped by userId)
+  // and re-renders settle quickly.
+  const incoming = useProfessionalBookings();
+  const incomingAll: Booking[] = incoming.data?.items ?? [];
+  const filteredIncoming = useMemo(
+    () => incomingFilter === "all"
+      ? incomingAll
+      : incomingAll.filter((b) => b.status === incomingFilter),
+    [incomingAll, incomingFilter],
+  );
+  const incomingStats = useMemo(() => ({
+    total:     incomingAll.length,
+    completed: incomingAll.filter((b) => b.status === "completed").length,
+    pending:   incomingAll.filter((b) => b.status === "pending" || b.status === "confirmed").length,
+    cancelled: incomingAll.filter((b) => b.status === "cancelled").length,
+  }), [incomingAll]);
+
+  const visibleNavItems = NAV_ITEMS.filter((n) => !n.proOnly || isPro);
 
   // Profile edit fields
   const [editName, setEditName] = useState(user?.name || "");
@@ -105,21 +187,176 @@ export function Dashboard() {
   const handleLogout = () => { logout(); navigate("/"); };
 
   const filteredBookings = bookingFilter === "all"
-    ? MOCK_BOOKINGS
-    : MOCK_BOOKINGS.filter((b) => b.status === bookingFilter);
+    ? allBookings
+    : allBookings.filter((b) => b.status === bookingFilter);
 
   const stats = {
-    total:     MOCK_BOOKINGS.length,
-    completed: MOCK_BOOKINGS.filter((b) => b.status === "completed").length,
-    pending:   MOCK_BOOKINGS.filter((b) => b.status === "pending" || b.status === "confirmed").length,
-    cancelled: MOCK_BOOKINGS.filter((b) => b.status === "cancelled").length,
+    total:     allBookings.length,
+    completed: allBookings.filter((b) => b.status === "completed").length,
+    pending:   allBookings.filter((b) => b.status === "pending" || b.status === "confirmed").length,
+    cancelled: allBookings.filter((b) => b.status === "cancelled").length,
   };
 
-  const handleSaveProfile = () => {
-    updateProfile({ name: editName, phone: editPhone, location: editLocation, bio: editBio });
-    setEditProfile(false);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+  const handleSaveProfile = async () => {
+    if (profileSaving) return;
+    setProfileSaving(true);
+    setProfileError(null);
+    try {
+      await updateProfile({
+        name: editName,
+        phone: editPhone,
+        location: editLocation,
+        bio: editBio,
+      });
+      setEditProfile(false);
+      toast.success("Profil güncellendi.");
+    } catch (err: unknown) {
+      // Stays inline — the user is still in the form and the error points
+      // at it (e.g. "Telefon zorunlu"). A toast would scroll away too fast.
+      const message =
+        err instanceof ApiError ? err.message : "Profil kaydedilemedi.";
+      setProfileError(message);
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const resetPwdForm = () => {
+    setPwdCurrent("");
+    setPwdNew("");
+    setPwdConfirm("");
+    setPwdError(null);
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pwdSubmitting) return;
+    setPwdError(null);
+    if (pwdNew.length < 8) {
+      setPwdError("Yeni şifre en az 8 karakter olmalı.");
+      return;
+    }
+    if (pwdNew !== pwdConfirm) {
+      setPwdError("Yeni şifreler eşleşmiyor.");
+      return;
+    }
+    setPwdSubmitting(true);
+    try {
+      await changePassword({ currentPassword: pwdCurrent, newPassword: pwdNew });
+      resetPwdForm();
+      setPwdOpen(false);
+      toast.success("Şifren güncellendi.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof ApiError ? err.message : "Şifre güncellenemedi.";
+      setPwdError(message);
+    } finally {
+      setPwdSubmitting(false);
+    }
+  };
+
+  const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // keep in sync with backend
+  const ALLOWED_AVATAR_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset so re-selecting the same file still triggers `change`.
+    e.target.value = "";
+    if (!file || avatarUploading) return;
+
+    // Client-side gate: matches the server's checks but saves a round-trip
+    // when the user picks something obviously wrong.
+    if (!ALLOWED_AVATAR_MIME.has(file.type)) {
+      toast.error("Yalnızca JPEG, PNG veya WebP yükleyebilirsiniz.");
+      return;
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      toast.error("Dosya çok büyük (en fazla 2 MB).");
+      return;
+    }
+
+    setAvatarUploading(true);
+    try {
+      await uploadAvatar(file);
+      toast.success("Avatar güncellendi.");
+    } catch (err) {
+      toast.apiError(err, "Avatar yüklenemedi.");
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const handleToggleNotification = async (key: "email" | "sms" | "push") => {
+    if (!user || notifsBusy) return;
+    const next = { ...user.notifications, [key]: !user.notifications[key] };
+    setNotifsBusy(key);
+    try {
+      await updateProfile({ notifications: next });
+    } catch (err) {
+      toast.apiError(err, "Tercih kaydedilemedi.");
+    } finally {
+      setNotifsBusy(null);
+    }
+  };
+
+  const handleDeleteAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (delSubmitting || !delPassword) return;
+    setDelSubmitting(true);
+    setDelError(null);
+    try {
+      await deleteAccount(delPassword);
+      // deleteAccount clears local auth; bounce to the home page.
+      navigate("/", { replace: true });
+    } catch (err: unknown) {
+      const message =
+        err instanceof ApiError ? err.message : "Hesap silinemedi.";
+      setDelError(message);
+    } finally {
+      setDelSubmitting(false);
+    }
+  };
+
+  const handleCancelBooking = async (id: string) => {
+    if (cancellingId) return;
+    setCancellingId(id);
+    try {
+      await cancelBooking(id);
+      bookings.refetch();
+      toast.success("Rezervasyon iptal edildi.");
+    } catch (err) {
+      toast.apiError(err, "İptal edilemedi.");
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
+  /**
+   * Shared driver for the professional-side row actions. Disables the row
+   * while the PATCH is in flight, refetches on success, surfaces a friendly
+   * error on failure. The action enum keeps the call sites tiny.
+   */
+  const runIncomingAction = async (
+    id: string,
+    action: "confirm" | "complete" | "cancel",
+  ) => {
+    if (incomingMutatingId) return;
+    setIncomingMutatingId(id);
+    try {
+      if (action === "confirm")       await confirmBooking(id);
+      else if (action === "complete") await completeBooking(id);
+      else                            await cancelBooking(id);
+      incoming.refetch();
+      const okMsg =
+        action === "confirm"  ? "Rezervasyon onaylandı."
+        : action === "complete" ? "Rezervasyon tamamlandı."
+        :                         "Rezervasyon iptal edildi.";
+      toast.success(okMsg);
+    } catch (err) {
+      toast.apiError(err, "İşlem tamamlanamadı.");
+    } finally {
+      setIncomingMutatingId(null);
+    }
   };
 
   return (
@@ -160,25 +397,31 @@ export function Dashboard() {
 
         {/* Nav */}
         <nav className="flex-1 p-3 flex flex-col gap-1">
-          {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => { setActiveTab(id); setSidebarOpen(false); }}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all w-full text-left ${
-                activeTab === id
-                  ? "bg-orange-500 text-white shadow-sm"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-              }`}
-            >
-              <Icon size={17} />
-              {label}
-              {id === "bookings" && stats.pending > 0 && (
-                <span className={`ml-auto text-xs font-bold px-1.5 py-0.5 rounded-full ${activeTab === id ? "bg-white/25 text-white" : "bg-orange-100 text-orange-600"}`}>
-                  {stats.pending}
-                </span>
-              )}
-            </button>
-          ))}
+          {visibleNavItems.map(({ id, label, icon: Icon }) => {
+            const badge =
+              id === "bookings" ? stats.pending
+                : id === "incoming" ? incomingStats.pending
+                : 0;
+            return (
+              <button
+                key={id}
+                onClick={() => { setActiveTab(id); setSidebarOpen(false); }}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all w-full text-left ${
+                  activeTab === id
+                    ? "bg-orange-500 text-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                }`}
+              >
+                <Icon size={17} />
+                {label}
+                {badge > 0 && (
+                  <span className={`ml-auto text-xs font-bold px-1.5 py-0.5 rounded-full ${activeTab === id ? "bg-white/25 text-white" : "bg-orange-100 text-orange-600"}`}>
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </nav>
 
         {/* Logout */}
@@ -200,7 +443,7 @@ export function Dashboard() {
             </button>
             <div>
               <h1 className="text-gray-900 font-extrabold text-lg">
-                {NAV_ITEMS.find((n) => n.id === activeTab)?.label}
+                {visibleNavItems.find((n) => n.id === activeTab)?.label}
               </h1>
               <p className="text-gray-400 text-xs hidden sm:block">
                 Hoş geldin, {user.name.split(" ")[0]}! 👋
@@ -208,11 +451,6 @@ export function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {saveSuccess && (
-              <span className="text-green-600 text-xs font-medium flex items-center gap-1 animate-slide-down">
-                <CheckCircle size={13} /> Kaydedildi
-              </span>
-            )}
             <button className="relative w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:text-orange-500 hover:border-orange-300 transition-colors">
               <Bell size={17} />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-orange-500 rounded-full" />
@@ -246,23 +484,36 @@ export function Dashboard() {
                   </button>
                 </div>
                 <div className="flex flex-col gap-3">
-                  {MOCK_BOOKINGS.filter((b) => b.status === "confirmed" || b.status === "pending").map((b) => (
-                    <div key={b.id} className="flex items-center gap-4 p-3 rounded-xl bg-gray-50 hover:bg-orange-50 transition-colors">
-                      <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                        <img src={b.avatar} alt={b.professional} className="w-full h-full object-cover object-top" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 text-sm truncate">{b.professional}</p>
-                        <p className="text-gray-500 text-xs">{b.service}</p>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className="text-xs font-semibold text-gray-700">{b.date}</p>
-                        <p className="text-xs text-gray-400">{b.time}</p>
-                      </div>
-                      <StatusBadge status={b.status} />
-                    </div>
-                  ))}
-                  {MOCK_BOOKINGS.filter((b) => b.status === "confirmed" || b.status === "pending").length === 0 && (
+                  {bookings.loading && !bookings.data && (
+                    <p className="text-gray-400 text-sm text-center py-4">Yükleniyor…</p>
+                  )}
+                  {bookings.error && (
+                    <p className="text-red-500 text-sm text-center py-4 flex items-center justify-center gap-2">
+                      <AlertCircle size={14} /> {bookings.error}
+                    </p>
+                  )}
+                  {!bookings.loading && !bookings.error && allBookings
+                    .filter((b) => b.status === "confirmed" || b.status === "pending")
+                    .map((b) => {
+                      const when = formatScheduledAt(b.scheduledAt);
+                      return (
+                        <div key={b.id} className="flex items-center gap-4 p-3 rounded-xl bg-gray-50 hover:bg-orange-50 transition-colors">
+                          <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
+                            <img src={b.professional.avatar} alt={b.professional.name} className="w-full h-full object-cover object-top" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-gray-900 text-sm truncate">{b.professional.name}</p>
+                            <p className="text-gray-500 text-xs">{b.service}</p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-xs font-semibold text-gray-700">{when.date}</p>
+                            <p className="text-xs text-gray-400">{when.time}</p>
+                          </div>
+                          <StatusBadge status={b.status} />
+                        </div>
+                      );
+                    })}
+                  {!bookings.loading && !bookings.error && allBookings.filter((b) => b.status === "confirmed" || b.status === "pending").length === 0 && (
                     <p className="text-gray-400 text-sm text-center py-4">Yaklaşan rezervasyon yok.</p>
                   )}
                 </div>
@@ -307,7 +558,7 @@ export function Dashboard() {
                     }`}>
                     {f === "all" ? "Tümü" : STATUS_CONFIG[f].label}
                     <span className="ml-1.5 text-xs opacity-70">
-                      ({f === "all" ? MOCK_BOOKINGS.length : MOCK_BOOKINGS.filter((b) => b.status === f).length})
+                      ({f === "all" ? allBookings.length : allBookings.filter((b) => b.status === f).length})
                     </span>
                   </button>
                 ))}
@@ -315,37 +566,176 @@ export function Dashboard() {
 
               {/* Booking Cards */}
               <div className="flex flex-col gap-3">
-                {filteredBookings.map((b) => (
-                  <div key={b.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4 hover:shadow-md transition-shadow animate-fade-in-up">
-                    <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
-                      <img src={b.avatar} alt={b.professional} className="w-full h-full object-cover object-top" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <p className="font-bold text-gray-900">{b.professional}</p>
-                        <StatusBadge status={b.status} />
-                      </div>
-                      <p className="text-gray-500 text-sm">{b.service}</p>
-                      <p className="text-gray-400 text-xs mt-0.5">{b.date} · {b.time}</p>
-                    </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <p className="font-extrabold text-gray-900">{b.price}</p>
-                      {b.status === "completed" && (
-                        <button className="flex items-center gap-1 text-xs text-orange-500 hover:text-orange-600 font-semibold border border-orange-300 hover:border-orange-500 px-3 py-1.5 rounded-lg transition-colors">
-                          <Star size={12} /> Değerlendir
-                        </button>
-                      )}
-                      {(b.status === "confirmed" || b.status === "pending") && (
-                        <button className="text-xs text-red-400 hover:text-red-600 font-semibold border border-red-200 hover:border-red-400 px-3 py-1.5 rounded-lg transition-colors">
-                          İptal Et
-                        </button>
-                      )}
-                    </div>
+                {bookings.loading && !bookings.data && (
+                  <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                    <p className="text-gray-400 text-sm">Yükleniyor…</p>
                   </div>
-                ))}
-                {filteredBookings.length === 0 && (
+                )}
+                {bookings.error && (
+                  <div className="bg-white rounded-2xl border border-red-100 p-10 flex flex-col items-center text-center gap-3">
+                    <AlertCircle size={22} className="text-red-500" />
+                    <p className="text-gray-800 font-semibold">{bookings.error}</p>
+                    <button
+                      onClick={bookings.refetch}
+                      className="text-orange-500 hover:text-orange-600 text-sm font-semibold"
+                    >
+                      Tekrar dene
+                    </button>
+                  </div>
+                )}
+                {!bookings.loading && !bookings.error && filteredBookings.map((b) => {
+                  const when = formatScheduledAt(b.scheduledAt);
+                  const canCancel = b.status === "confirmed" || b.status === "pending";
+                  return (
+                    <div key={b.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4 hover:shadow-md transition-shadow animate-fade-in-up">
+                      <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
+                        <img src={b.professional.avatar} alt={b.professional.name} className="w-full h-full object-cover object-top" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <p className="font-bold text-gray-900">{b.professional.name}</p>
+                          <StatusBadge status={b.status} />
+                        </div>
+                        <p className="text-gray-500 text-sm">{b.service}</p>
+                        <p className="text-gray-400 text-xs mt-0.5">{when.date} · {when.time}</p>
+                      </div>
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <p className="font-extrabold text-gray-900">{formatPrice(b.priceCents)}</p>
+                        {b.status === "completed" && b.review && (
+                          <span
+                            className="flex items-center gap-1 text-xs text-green-600 font-semibold border border-green-200 bg-green-50 px-3 py-1.5 rounded-lg"
+                            title={`${b.review.rating}/5`}
+                          >
+                            <CheckCircle size={12} /> Değerlendirildi
+                          </span>
+                        )}
+                        {b.status === "completed" && !b.review && (
+                          <button
+                            onClick={() => setReviewingBooking(b)}
+                            className="flex items-center gap-1 text-xs text-orange-500 hover:text-orange-600 font-semibold border border-orange-300 hover:border-orange-500 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            <Star size={12} /> Değerlendir
+                          </button>
+                        )}
+                        {canCancel && (
+                          <button
+                            onClick={() => handleCancelBooking(b.id)}
+                            disabled={cancellingId === b.id}
+                            className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed font-semibold border border-red-200 hover:border-red-400 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            {cancellingId === b.id ? "İptal ediliyor…" : "İptal Et"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {!bookings.loading && !bookings.error && filteredBookings.length === 0 && (
                   <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
                     <p className="text-gray-400 text-sm">Bu kategoride rezervasyon bulunamadı.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── INCOMING (pro) TAB ── */}
+          {activeTab === "incoming" && isPro && (
+            <div className="flex flex-col gap-5">
+              {/* Filters */}
+              <div className="flex flex-wrap gap-2">
+                {(["all", "pending", "confirmed", "completed", "cancelled"] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setIncomingFilter(f)}
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                      incomingFilter === f
+                        ? "bg-orange-500 text-white shadow-sm"
+                        : "bg-white border border-gray-200 text-gray-600 hover:border-orange-300"
+                    }`}
+                  >
+                    {f === "all" ? "Tümü" : STATUS_CONFIG[f].label}
+                    <span className="ml-1.5 text-xs opacity-70">
+                      ({f === "all" ? incomingAll.length : incomingAll.filter((b) => b.status === f).length})
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Cards */}
+              <div className="flex flex-col gap-3">
+                {incoming.loading && !incoming.data && (
+                  <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                    <p className="text-gray-400 text-sm">Yükleniyor…</p>
+                  </div>
+                )}
+                {incoming.error && (
+                  <div className="bg-white rounded-2xl border border-red-100 p-10 flex flex-col items-center text-center gap-3">
+                    <AlertCircle size={22} className="text-red-500" />
+                    <p className="text-gray-800 font-semibold">{incoming.error}</p>
+                    <button
+                      onClick={incoming.refetch}
+                      className="text-orange-500 hover:text-orange-600 text-sm font-semibold"
+                    >
+                      Tekrar dene
+                    </button>
+                  </div>
+                )}
+                {!incoming.loading && !incoming.error && filteredIncoming.map((b) => {
+                  const when = formatScheduledAt(b.scheduledAt);
+                  const busy = incomingMutatingId === b.id;
+                  return (
+                    <div key={b.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4 hover:shadow-md transition-shadow animate-fade-in-up">
+                      <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
+                        <img src={b.customer.avatar} alt={b.customer.name} className="w-full h-full object-cover object-top" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <p className="font-bold text-gray-900">{b.customer.name}</p>
+                          <StatusBadge status={b.status} />
+                        </div>
+                        <p className="text-gray-500 text-sm">{b.service}</p>
+                        <p className="text-gray-400 text-xs mt-0.5">{when.date} · {when.time}</p>
+                        <p className="text-gray-500 text-xs mt-1 line-clamp-2">
+                          <span className="text-gray-400">Adres:</span> {b.address}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                        <p className="font-extrabold text-gray-900">{formatPrice(b.priceCents)}</p>
+                        {b.status === "pending" && (
+                          <button
+                            onClick={() => runIncomingAction(b.id, "confirm")}
+                            disabled={busy}
+                            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold border border-blue-200 hover:border-blue-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <CheckCircle size={12} /> Onayla
+                          </button>
+                        )}
+                        {(b.status === "pending" || b.status === "confirmed") && (
+                          <button
+                            onClick={() => runIncomingAction(b.id, "complete")}
+                            disabled={busy}
+                            className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-semibold border border-green-200 hover:border-green-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <PlayCircle size={12} /> Tamamla
+                          </button>
+                        )}
+                        {(b.status === "pending" || b.status === "confirmed") && (
+                          <button
+                            onClick={() => runIncomingAction(b.id, "cancel")}
+                            disabled={busy}
+                            className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed font-semibold border border-red-200 hover:border-red-400 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            İptal
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {!incoming.loading && !incoming.error && filteredIncoming.length === 0 && (
+                  <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                    <p className="text-gray-400 text-sm">Bu kategoride talep bulunamadı.</p>
                   </div>
                 )}
               </div>
@@ -361,8 +751,28 @@ export function Dashboard() {
                   <div className="w-24 h-24 rounded-2xl overflow-hidden border-4 border-orange-200">
                     <img src={user.avatar} alt={user.name} className="w-full h-full object-cover object-top" />
                   </div>
-                  <button className="absolute -bottom-2 -right-2 w-8 h-8 bg-orange-500 hover:bg-orange-600 text-white rounded-xl flex items-center justify-center shadow-md transition-colors">
-                    <Camera size={14} />
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handleAvatarChange}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={avatarUploading}
+                    aria-label="Avatar değiştir"
+                    className="absolute -bottom-2 -right-2 w-8 h-8 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white rounded-xl flex items-center justify-center shadow-md transition-colors"
+                  >
+                    {avatarUploading ? (
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    ) : (
+                      <Camera size={14} />
+                    )}
                   </button>
                 </div>
                 <div className="text-center sm:text-left flex-1">
@@ -408,14 +818,23 @@ export function Dashboard() {
                         placeholder="Kendinizi tanıtın..."
                         className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400 resize-none transition-all" />
                     </div>
+                    {profileError && (
+                      <p className="flex items-center gap-2 text-red-600 text-sm bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                        <AlertCircle size={14} /> {profileError}
+                      </p>
+                    )}
                     <div className="flex gap-3 mt-2">
-                      <button onClick={() => setEditProfile(false)}
-                        className="flex-none border border-gray-300 hover:border-gray-400 text-gray-700 font-semibold px-5 py-2.5 rounded-xl text-sm transition-colors">
+                      <button
+                        onClick={() => { setEditProfile(false); setProfileError(null); }}
+                        disabled={profileSaving}
+                        className="flex-none border border-gray-300 hover:border-gray-400 disabled:opacity-50 text-gray-700 font-semibold px-5 py-2.5 rounded-xl text-sm transition-colors">
                         Vazgeç
                       </button>
-                      <button onClick={handleSaveProfile}
-                        className="flex-1 bg-orange-500 hover:bg-orange-600 active:scale-[0.98] text-white font-semibold py-2.5 rounded-xl text-sm transition-all">
-                        Kaydet
+                      <button
+                        onClick={handleSaveProfile}
+                        disabled={profileSaving}
+                        className="flex-1 bg-orange-500 hover:bg-orange-600 active:scale-[0.98] disabled:bg-orange-300 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-xl text-sm transition-all">
+                        {profileSaving ? "Kaydediliyor…" : "Kaydet"}
                       </button>
                     </div>
                   </div>
@@ -467,21 +886,30 @@ export function Dashboard() {
                     { key: "email" as const, label: "E-posta Bildirimleri", desc: "Rezervasyon güncellemeleri e-posta ile gelsin." },
                     { key: "sms" as const, label: "SMS Bildirimleri", desc: "Önemli güncellemeler SMS ile gelsin." },
                     { key: "push" as const, label: "Push Bildirimleri", desc: "Tarayıcı bildirimleri açık olsun." },
-                  ].map(({ key, label, desc }) => (
-                    <div key={key} className="flex items-center justify-between p-4 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
-                      <div>
-                        <p className="font-semibold text-gray-800 text-sm">{label}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">{desc}</p>
+                  ].map(({ key, label, desc }) => {
+                    const on = user.notifications[key];
+                    const busy = notifsBusy === key;
+                    return (
+                      <div key={key} className="flex items-center justify-between p-4 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
+                        <div>
+                          <p className="font-semibold text-gray-800 text-sm">{label}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{desc}</p>
+                        </div>
+                        <button
+                          onClick={() => handleToggleNotification(key)}
+                          disabled={busy}
+                          aria-pressed={on}
+                          aria-label={`${label} ${on ? "açık" : "kapalı"}`}
+                          className={`relative w-11 h-6 rounded-full transition-colors disabled:opacity-60 ${on ? "bg-orange-500" : "bg-gray-300"}`}
+                        >
+                          <div
+                            className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all"
+                            style={{ left: on ? "22px" : "2px" }}
+                          />
+                        </button>
                       </div>
-                      <button
-                        onClick={() => setNotifications((n) => ({ ...n, [key]: !n[key] }))}
-                        className={`relative w-11 h-6 rounded-full transition-colors ${notifications[key] ? "bg-orange-500" : "bg-gray-300"}`}
-                      >
-                        <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${notifications[key] ? "left-5.5" : "left-0.5"}`}
-                          style={{ left: notifications[key] ? "22px" : "2px" }} />
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -490,20 +918,95 @@ export function Dashboard() {
                 <h3 className="font-bold text-gray-900 mb-5 flex items-center gap-2">
                   <Shield size={18} className="text-orange-500" /> Güvenlik
                 </h3>
+
+
                 <div className="flex flex-col gap-3">
+                  {/* Change password — collapsible */}
+                  <div className="rounded-xl bg-gray-50">
+                    <div className="flex items-center justify-between p-4">
+                      <div>
+                        <p className="font-semibold text-gray-800 text-sm">Şifre Değiştir</p>
+                        <p className="text-gray-400 text-xs mt-0.5">Düzenli olarak güncellemen önerilir.</p>
+                      </div>
+                      <button
+                        onClick={() => { setPwdOpen((v) => !v); resetPwdForm(); }}
+                        className="text-orange-500 hover:text-orange-600 text-xs font-semibold border border-orange-300 hover:border-orange-500 px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        {pwdOpen ? "Vazgeç" : "Değiştir"}
+                      </button>
+                    </div>
+
+                    {pwdOpen && (
+                      <form
+                        onSubmit={handleChangePassword}
+                        className="px-4 pb-4 flex flex-col gap-3 border-t border-gray-200 pt-4"
+                      >
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-xs font-medium text-gray-600">Mevcut Şifre</label>
+                          <input
+                            type="password"
+                            value={pwdCurrent}
+                            onChange={(e) => setPwdCurrent(e.target.value)}
+                            autoComplete="current-password"
+                            required
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-medium text-gray-600">Yeni Şifre</label>
+                            <input
+                              type="password"
+                              value={pwdNew}
+                              onChange={(e) => setPwdNew(e.target.value)}
+                              autoComplete="new-password"
+                              required
+                              minLength={8}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-medium text-gray-600">Yeni Şifre (Tekrar)</label>
+                            <input
+                              type="password"
+                              value={pwdConfirm}
+                              onChange={(e) => setPwdConfirm(e.target.value)}
+                              autoComplete="new-password"
+                              required
+                              minLength={8}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                            />
+                          </div>
+                        </div>
+                        {pwdError && (
+                          <p className="flex items-center gap-2 text-red-600 text-xs bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                            <AlertCircle size={12} /> {pwdError}
+                          </p>
+                        )}
+                        <button
+                          type="submit"
+                          disabled={pwdSubmitting || !pwdCurrent || !pwdNew || !pwdConfirm}
+                          className="bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
+                        >
+                          {pwdSubmitting ? "Güncelleniyor…" : "Şifreyi Güncelle"}
+                        </button>
+                      </form>
+                    )}
+                  </div>
+
+                  {/* Placeholder rows — UI present, not wired yet */}
                   {[
-                    { label: "Şifre Değiştir", desc: "Son değişiklik: 30 gün önce", action: "Değiştir" },
-                    { label: "İki Faktörlü Doğrulama", desc: "Ek güvenlik katmanı ekle", action: "Etkinleştir" },
-                    { label: "Aktif Oturumlar", desc: "1 aktif oturum", action: "Görüntüle" },
+                    { label: "İki Faktörlü Doğrulama", desc: "Ek güvenlik katmanı ekle", action: "Yakında" },
+                    { label: "Aktif Oturumlar", desc: "1 aktif oturum", action: "Yakında" },
                   ].map(({ label, desc, action }) => (
                     <div key={label} className="flex items-center justify-between p-4 rounded-xl bg-gray-50">
                       <div>
                         <p className="font-semibold text-gray-800 text-sm">{label}</p>
                         <p className="text-gray-400 text-xs mt-0.5">{desc}</p>
                       </div>
-                      <button className="text-orange-500 hover:text-orange-600 text-xs font-semibold border border-orange-300 hover:border-orange-500 px-3 py-1.5 rounded-lg transition-colors">
+                      <span className="text-gray-400 text-xs font-semibold border border-gray-200 px-3 py-1.5 rounded-lg">
                         {action}
-                      </button>
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -517,7 +1020,10 @@ export function Dashboard() {
                     <p className="font-semibold text-gray-800 text-sm">Hesabı Sil</p>
                     <p className="text-gray-400 text-xs mt-0.5">Bu işlem geri alınamaz.</p>
                   </div>
-                  <button className="text-red-500 hover:text-red-700 text-xs font-semibold border border-red-300 hover:border-red-500 px-3 py-1.5 rounded-lg transition-colors">
+                  <button
+                    onClick={() => { setDelOpen(true); setDelPassword(""); setDelError(null); }}
+                    className="text-red-500 hover:text-red-700 text-xs font-semibold border border-red-300 hover:border-red-500 px-3 py-1.5 rounded-lg transition-colors"
+                  >
                     Hesabı Sil
                   </button>
                 </div>
@@ -527,6 +1033,88 @@ export function Dashboard() {
 
         </div>
       </div>
+
+      <ReviewModal
+        booking={reviewingBooking}
+        isOpen={Boolean(reviewingBooking)}
+        onClose={() => setReviewingBooking(null)}
+        onReviewed={() => {
+          setReviewingBooking(null);
+          bookings.refetch();
+        }}
+      />
+
+      {/* ── Delete-account confirmation modal ───────────────────────────── */}
+      {delOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="del-title"
+          onClick={(e) => { if (e.target === e.currentTarget && !delSubmitting) setDelOpen(false); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 id="del-title" className="font-bold text-gray-900 text-lg">
+                Hesabı Sil
+              </h2>
+              <button
+                onClick={() => setDelOpen(false)}
+                disabled={delSubmitting}
+                className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                aria-label="Kapat"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleDeleteAccount} className="px-6 py-5 flex flex-col gap-4">
+              <div className="flex items-start gap-3 bg-red-50 border border-red-100 rounded-xl p-4">
+                <AlertCircle size={20} className="text-red-500 mt-0.5 flex-shrink-0" />
+                <p className="text-red-700 text-sm">
+                  <span className="font-semibold">Bu işlem geri alınamaz.</span>{" "}
+                  Hesabınla birlikte tüm rezervasyonların, değerlendirmelerin ve
+                  profil bilgilerin kalıcı olarak silinir.
+                </p>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-gray-700">
+                  Devam etmek için şifreni gir
+                </label>
+                <input
+                  type="password"
+                  value={delPassword}
+                  onChange={(e) => setDelPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                />
+              </div>
+              {delError && (
+                <p className="flex items-center gap-2 text-red-600 text-sm bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                  <AlertCircle size={14} /> {delError}
+                </p>
+              )}
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setDelOpen(false)}
+                  disabled={delSubmitting}
+                  className="flex-1 border border-gray-300 hover:border-gray-400 disabled:opacity-50 text-gray-700 font-semibold py-2.5 rounded-lg text-sm transition-colors"
+                >
+                  Vazgeç
+                </button>
+                <button
+                  type="submit"
+                  disabled={delSubmitting || !delPassword}
+                  className="flex-1 bg-red-500 hover:bg-red-600 disabled:bg-red-300 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
+                >
+                  {delSubmitting ? "Siliniyor…" : "Hesabımı Kalıcı Olarak Sil"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

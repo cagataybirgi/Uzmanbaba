@@ -2,6 +2,7 @@ import { Outlet } from "react-router";
 import { AuthProvider } from "./context/AuthContext";
 import { Navbar } from "./components/Navbar";
 import { Footer } from "./components/Footer";
+import { Toaster } from "./components/ui/sonner";
 
 export function Root() {
   return (
@@ -12,6 +13,9 @@ export function Root() {
           <Outlet />
         </main>
         <Footer />
+        {/* Single Toaster instance for the whole app. Anything calling
+            toast() / toast.success() from src/app/lib/toast.ts renders here. */}
+        <Toaster position="top-right" richColors closeButton />
       </div>
     </AuthProvider>
   );

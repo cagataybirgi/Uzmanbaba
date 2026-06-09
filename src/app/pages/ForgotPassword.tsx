@@ -1,6 +1,7 @@
 import { useState, useEffect, useId } from "react";
 import { Link, useNavigate } from "react-router";
 import { Mail, ArrowRight, CheckCircle, AlertCircle, ArrowLeft, ShieldCheck } from "lucide-react";
+import { api, ApiError } from "../lib/api";
 
 const RESEND_SECONDS = 60;
 
@@ -41,19 +42,41 @@ export function ForgotPassword() {
     }
     setError("");
     setLoading(true);
-    // Mock backend call
-    await new Promise((r) => setTimeout(r, 1200));
-    setLoading(false);
-    setSubmitted(true);
-    setCountdown(RESEND_SECONDS);
+    try {
+      // Backend always returns 200 here regardless of whether the email
+      // exists, so we never leak account presence — even a "wrong" email
+      // shows the success state.
+      await api.post(
+        "/auth/forgot-password",
+        { email: email.trim() },
+        { auth: false },
+      );
+      setSubmitted(true);
+      setCountdown(RESEND_SECONDS);
+    } catch (e: unknown) {
+      const message =
+        e instanceof ApiError ? e.message : "İstek gönderilemedi.";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleResend = async () => {
     if (countdown > 0) return;
     setResending(true);
-    await new Promise((r) => setTimeout(r, 900));
-    setResending(false);
-    setCountdown(RESEND_SECONDS);
+    try {
+      await api.post(
+        "/auth/forgot-password",
+        { email: email.trim() },
+        { auth: false },
+      );
+      setCountdown(RESEND_SECONDS);
+    } catch {
+      /* swallow — the visible UI just shows that resend is available again */
+    } finally {
+      setResending(false);
+    }
   };
 
   return (

@@ -6,10 +6,20 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { api, ApiError } from "../lib/api";
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * TYPES
+ *
+ * Mirrors the backend's UserDto in backend/src/modules/auth/auth.dto.ts.
+ * Keep these in lock-step.
  * ═════════════════════════════════════════════════════════════════════════ */
+
+export interface NotificationPrefs {
+  email: boolean;
+  sms: boolean;
+  push: boolean;
+}
 
 export interface User {
   id: string;
@@ -26,6 +36,7 @@ export interface User {
   rating?: number;
   completedJobs: number;
   pendingJobs: number;
+  notifications: NotificationPrefs;
 }
 
 export interface LoginPayload {
@@ -44,7 +55,11 @@ export interface RegisterPayload {
   bio?: string;
 }
 
-/** Shape returned by a successful POST /auth/login or /auth/register */
+export interface ChangePasswordPayload {
+  currentPassword: string;
+  newPassword: string;
+}
+
 interface AuthResponse {
   token: string;
   user: User;
@@ -59,30 +74,23 @@ interface AuthContextType {
   register: (data: RegisterPayload) => Promise<void>;
   logout: () => void;
   verifyEmail: (code: string) => Promise<boolean>;
-  updateProfile: (data: Partial<User>) => void;
+  resendVerification: () => Promise<void>;
+  updateProfile: (data: Partial<User>) => Promise<void>;
+  uploadAvatar: (file: File) => Promise<void>;
+  changePassword: (data: ChangePasswordPayload) => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
 }
 
-/**
- * Typed error thrown by the API functions. Callers can `catch (err)` and
- * check `err instanceof ApiError` to read `status` and `message` for
- * displaying user-facing feedback.
- */
-export class ApiError extends Error {
-  status: number;
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-  }
-}
+// Re-exported so legacy imports of `ApiError` from this file still work.
+export { ApiError };
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * STORAGE LAYER
  *
  * Wraps localStorage with try/catch so private-browsing or quota errors
- * don't crash the app. Auth state is split across two keys following the
- * common convention: token lives separately because it's read independently
- * (e.g., to set the Authorization header on outgoing requests).
+ * don't crash the app. Auth state is split across two keys: the token lives
+ * separately because the api client reads it directly to set the
+ * Authorization header.
  * ═════════════════════════════════════════════════════════════════════════ */
 
 const STORAGE_KEYS = {
@@ -131,170 +139,33 @@ const storage = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * API LAYER
- *
- * Each function is shaped like a real fetch call. The mock body below the
- * commented-out fetch is a drop-in placeholder — when you have a backend,
- * uncomment the fetch block and delete `return mockRequest(...)`.
- * ═════════════════════════════════════════════════════════════════════════ */
-
-// Base URL for the real backend. Set VITE_API_URL in your .env to override.
-// const API_BASE = import.meta.env?.VITE_API_URL ?? "/api";
-
-/**
- * Generates a JWT-shaped string (3 base64 segments). Not cryptographically
- * valid — purely for the mock to return something that looks the part.
- */
-function makeMockToken(userId: string): string {
-  const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = btoa(
-    JSON.stringify({
-      sub: userId,
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 days
-    }),
-  );
-  const signature = btoa("mock-signature-not-real");
-  return `${header}.${payload}.${signature}`;
-}
-
-/**
- * Simulates a network round-trip. Resolves with the producer's return value
- * after `delay` ms, or rejects if the producer throws.
- */
-function mockRequest<T>(producer: () => T, delay = 800): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    setTimeout(() => {
-      try {
-        resolve(producer());
-      } catch (err) {
-        reject(err);
-      }
-    }, delay);
-  });
-}
-
-const DEFAULT_AVATAR =
-  "https://images.unsplash.com/photo-1649769069590-268b0b994462?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=200";
-
-// ─── POST /auth/login ──────────────────────────────────────────────────────
-async function apiLogin(payload: LoginPayload): Promise<AuthResponse> {
-  // === Production implementation (uncomment when backend is ready) =========
-  // const res = await fetch(`${API_BASE}/auth/login`, {
-  //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify(payload),
-  // });
-  // if (!res.ok) {
-  //   const body = await res.json().catch(() => ({}));
-  //   throw new ApiError(body.message ?? "Giriş başarısız.", res.status);
-  // }
-  // return (await res.json()) as AuthResponse;
-
-  // === Mock implementation ================================================
-  return mockRequest<AuthResponse>(() => {
-    if (!payload.email || !payload.password) {
-      throw new ApiError("E-posta ve şifre zorunlu.", 400);
-    }
-    // Hook here to simulate bad credentials for testing the error UI:
-    //   if (payload.email === "fail@uzmanbaba.com") {
-    //     throw new ApiError("E-posta veya şifre hatalı.", 401);
-    //   }
-
-    const user: User = {
-      id: "u1",
-      name: "Ahmet Kullanıcı",
-      email: payload.email,
-      phone: "+90 555 123 45 67",
-      accountType: "customer",
-      emailVerified: true,
-      avatar: DEFAULT_AVATAR,
-      location: "Ankara, TR",
-      joinDate: "Mayıs 2026",
-      completedJobs: 8,
-      pendingJobs: 2,
-      rating: 4.9,
-    };
-    return { token: makeMockToken(user.id), user };
-  }, 1200);
-}
-
-// ─── POST /auth/register ───────────────────────────────────────────────────
-async function apiRegister(payload: RegisterPayload): Promise<AuthResponse> {
-  // === Production implementation ==========================================
-  // const res = await fetch(`${API_BASE}/auth/register`, {
-  //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify(payload),
-  // });
-  // if (!res.ok) {
-  //   const body = await res.json().catch(() => ({}));
-  //   throw new ApiError(body.message ?? "Kayıt başarısız.", res.status);
-  // }
-  // return (await res.json()) as AuthResponse;
-
-  // === Mock implementation ================================================
-  return mockRequest<AuthResponse>(() => {
-    if (!payload.email || !payload.password || !payload.name) {
-      throw new ApiError("Zorunlu alanlar eksik.", 400);
-    }
-
-    const user: User = {
-      id: "u1",
-      name: payload.name,
-      email: payload.email,
-      phone: payload.phone,
-      accountType: payload.accountType,
-      emailVerified: false,
-      avatar: DEFAULT_AVATAR,
-      location: payload.city ? `${payload.city}, TR` : "Türkiye",
-      specialty: payload.specialty,
-      bio: payload.bio,
-      joinDate: "Mayıs 2026",
-      completedJobs: 0,
-      pendingJobs: 0,
-    };
-    return { token: makeMockToken(user.id), user };
-  }, 1400);
-}
-
-// ─── POST /auth/verify-email ───────────────────────────────────────────────
-async function apiVerifyEmail(code: string, token: string | null): Promise<boolean> {
-  // === Production implementation ==========================================
-  // const res = await fetch(`${API_BASE}/auth/verify-email`, {
-  //   method: "POST",
-  //   headers: {
-  //     "Content-Type": "application/json",
-  //     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  //   },
-  //   body: JSON.stringify({ code }),
-  // });
-  // if (res.status === 400) return false;  // wrong code
-  // if (!res.ok) throw new ApiError("Doğrulama başarısız.", res.status);
-  // return true;
-
-  // === Mock implementation ================================================
-  // Token isn't checked in the mock but the parameter is here to show the
-  // production code's auth-header shape. Silence unused warning:
-  void token;
-  return mockRequest<boolean>(() => {
-    // Accept any 6-digit numeric code
-    return /^\d{6}$/.test(code);
-  }, 1000);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
  * CONTEXT
  * ═════════════════════════════════════════════════════════════════════════ */
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+/**
+ * Backfills fields that older cached user blobs may be missing. Stored users
+ * from before a schema bump can otherwise crash the UI on first render
+ * (e.g. `user.notifications.email` would throw on a TypeError).
+ *
+ * Trade-off: we may show stale "true/false" defaults for a moment until the
+ * next `/api/users/me` or `updateProfile` call replaces the cached user.
+ */
+function normalizeStoredUser(raw: User | null): User | null {
+  if (!raw) return null;
+  return {
+    ...raw,
+    notifications: raw.notifications ?? { email: true, sms: true, push: false },
+  };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Lazy initializers read localStorage SYNCHRONOUSLY on first render so
   // refresh-while-logged-in shows the authenticated UI immediately — no
   // flash of logged-out state, no isLoading flag needed.
   const [user, setUser] = useState<User | null>(() =>
-    storage.getJSON<User>(STORAGE_KEYS.user),
+    normalizeStoredUser(storage.getJSON<User>(STORAGE_KEYS.user)),
   );
   const [token, setToken] = useState<string | null>(() =>
     storage.getString(STORAGE_KEYS.token),
@@ -303,9 +174,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => storage.getString(STORAGE_KEYS.pendingEmail) ?? "",
   );
 
-  /**
-   * Persists a successful auth response to state + localStorage in one shot.
-   */
   const applyAuthResponse = useCallback((res: AuthResponse) => {
     setUser(res.user);
     setToken(res.token);
@@ -313,10 +181,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     storage.setString(STORAGE_KEYS.token, res.token);
   }, []);
 
-  /**
-   * Clears auth state from memory and storage. Used by logout and by the
-   * cross-tab sync handler.
-   */
   const clearAuth = useCallback(() => {
     setUser(null);
     setToken(null);
@@ -335,13 +199,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (e.key === STORAGE_KEYS.token) {
         setToken(e.newValue);
         if (!e.newValue) {
-          // Token cleared in another tab → log out here too
           setUser(null);
           setPendingEmail("");
         }
       }
       if (e.key === STORAGE_KEYS.user) {
-        setUser(e.newValue ? (JSON.parse(e.newValue) as User) : null);
+        setUser(
+          e.newValue
+            ? normalizeStoredUser(JSON.parse(e.newValue) as User)
+            : null,
+        );
       }
       if (e.key === STORAGE_KEYS.pendingEmail) {
         setPendingEmail(e.newValue ?? "");
@@ -355,7 +222,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const res = await apiLogin({ email, password });
+      const res = await api.post<AuthResponse>(
+        "/auth/login",
+        { email, password },
+        { auth: false },
+      );
       applyAuthResponse(res);
     },
     [applyAuthResponse],
@@ -363,7 +234,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (data: RegisterPayload) => {
-      const res = await apiRegister(data);
+      const res = await api.post<AuthResponse>(
+        "/auth/register",
+        data,
+        { auth: false },
+      );
       applyAuthResponse(res);
       // Track which email is awaiting verification so the verify page can
       // show a masked version even after a refresh.
@@ -375,51 +250,88 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const verifyEmail = useCallback(
     async (code: string): Promise<boolean> => {
-      const ok = await apiVerifyEmail(code, token);
-      if (ok) {
-        setUser((prev) => {
-          if (!prev) return null;
-          const updated = { ...prev, emailVerified: true };
-          storage.setJSON(STORAGE_KEYS.user, updated);
-          return updated;
+      try {
+        const res = await api.post<{ ok: true; user: User }>("/auth/verify-email", {
+          code,
         });
-        // Clear the pending email once verified
+        setUser(res.user);
+        storage.setJSON(STORAGE_KEYS.user, res.user);
         setPendingEmail("");
         storage.remove(STORAGE_KEYS.pendingEmail);
+        return true;
+      } catch (err) {
+        // "Wrong code" is an expected branch — return false so the UI can
+        // shake the input. Anything else (network, expired token) re-throws.
+        if (
+          err instanceof ApiError &&
+          (err.code === "invalid_code" || err.code === "validation_error")
+        ) {
+          return false;
+        }
+        throw err;
       }
-      return ok;
     },
-    [token],
+    [],
   );
 
+  const resendVerification = useCallback(async () => {
+    await api.post<{ ok: true }>("/auth/resend-verification");
+  }, []);
+
   const logout = useCallback(() => {
-    // Real backends usually have POST /auth/logout to invalidate the
-    // server-side session. Fire-and-forget pattern (no await) so the UI
-    // updates immediately regardless of network state:
-    //   fetch(`${API_BASE}/auth/logout`, {
-    //     method: "POST",
-    //     headers: { Authorization: `Bearer ${token}` },
-    //   }).catch(() => { /* offline is fine, local state is cleared */ });
+    // Fire-and-forget — the JWT is stateless so the client-side clear is
+    // the source of truth. If the backend adds a session-revocation table
+    // later, this keeps the contract.
+    api.post("/auth/logout").catch(() => {
+      /* offline is fine, local state is cleared either way */
+    });
     clearAuth();
   }, [clearAuth]);
 
-  const updateProfile = useCallback((data: Partial<User>) => {
-    // Optimistic local update. To make this a real API call:
-    //   await fetch(`${API_BASE}/users/me`, {
-    //     method: "PATCH",
-    //     headers: {
-    //       "Content-Type": "application/json",
-    //       Authorization: `Bearer ${token}`,
-    //     },
-    //     body: JSON.stringify(data),
-    //   });
-    setUser((prev) => {
-      if (!prev) return null;
-      const updated = { ...prev, ...data };
-      storage.setJSON(STORAGE_KEYS.user, updated);
-      return updated;
-    });
+  const updateProfile = useCallback(async (data: Partial<User>) => {
+    // Only forward the fields the backend's PATCH /users/me accepts. This
+    // also strips client-side-only flags (id, joinDate, rating, etc.) that
+    // would either be rejected or silently ignored.
+    const payload: Record<string, unknown> = {};
+    if (data.name !== undefined) payload.name = data.name;
+    if (data.phone !== undefined) payload.phone = data.phone;
+    if (data.location !== undefined) payload.location = data.location;
+    if (data.avatar !== undefined) payload.avatar = data.avatar;
+    if (data.specialty !== undefined) payload.specialty = data.specialty;
+    if (data.bio !== undefined) payload.bio = data.bio;
+    if (data.notifications !== undefined) payload.notifications = data.notifications;
+
+    const res = await api.patch<{ user: User }>("/users/me", payload);
+    setUser(res.user);
+    storage.setJSON(STORAGE_KEYS.user, res.user);
   }, []);
+
+  const uploadAvatar = useCallback(async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await api.post<{ user: User }>("/users/me/avatar", form);
+    setUser(res.user);
+    storage.setJSON(STORAGE_KEYS.user, res.user);
+  }, []);
+
+  const changePassword = useCallback(
+    async ({ currentPassword, newPassword }: ChangePasswordPayload) => {
+      await api.post<{ ok: true }>("/auth/change-password", {
+        currentPassword,
+        newPassword,
+      });
+    },
+    [],
+  );
+
+  const deleteAccount = useCallback(
+    async (password: string) => {
+      await api.del<undefined>("/users/me", { body: { password } });
+      // Mirror logout: server state is gone, so the local state must follow.
+      clearAuth();
+    },
+    [clearAuth],
+  );
 
   return (
     <AuthContext.Provider
@@ -432,7 +344,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         register,
         logout,
         verifyEmail,
+        resendVerification,
         updateProfile,
+        uploadAvatar,
+        changePassword,
+        deleteAccount,
       }}
     >
       {children}

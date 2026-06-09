@@ -1,0 +1,61 @@
+# Local dev/staging stack for the backend.
+#
+# Usage:
+#   docker compose up -d                  # bring everything up
+#   docker compose run --rm backend npm run db:deploy   # apply migrations
+#   docker compose logs -f backend        # tail logs
+#   docker compose down                   # stop (keeps volumes)
+#   docker compose down -v                # stop + wipe data + uploaded files
+#
+# Frontend isn't in here — run it locally with `npm run dev` from the repo
+# root, and point it at http://localhost:4000/api via VITE_API_URL.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: uzmanbaba
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # The api container waits on this so prisma doesn't try to connect
+      # before Postgres has finished its first-boot initialization.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d uzmanbaba"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/uzmanbaba?schema=public"
+      # ⚠️  Replace before shipping.
+      JWT_SECRET: "change-me-to-a-long-random-string-at-least-32-chars"
+      JWT_EXPIRES_IN: "7d"
+      CORS_ORIGIN: "http://localhost:5173"
+      PUBLIC_BASE_URL: "http://localhost:4000"
+      # Leave SMTP_HOST blank to keep dev-mode "log the code" behaviour;
+      # set the SMTP_* block here to flip to a real provider.
+      SMTP_HOST: ""
+      MAIL_FROM: "UzmanBaba <no-reply@uzmanbaba.com>"
+      APP_URL: "http://localhost:5173"
+    ports:
+      - "4000:4000"
+    volumes:
+      # Persisted across container rebuilds so users don't lose their avatars.
+      - avatars:/app/uploads
+
+volumes:
+  pgdata:
+  avatars:

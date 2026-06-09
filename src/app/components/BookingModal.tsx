@@ -1,12 +1,18 @@
 import { useEffect, useId, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, Star, Calendar, CheckCircle2 } from "lucide-react";
+import { Link } from "react-router";
+import { X, Star, Calendar, Clock, CheckCircle2, AlertCircle } from "lucide-react";
 import { type Professional } from "./ProfessionalCard";
+import { useAuth } from "../context/AuthContext";
+import { createBooking } from "../data/bookings";
+import { ApiError } from "../lib/api";
 
 interface BookingModalProps {
   professional: Professional | null;
   isOpen: boolean;
   onClose: () => void;
+  /** Called after a successful booking — e.g. so the dashboard can refetch. */
+  onBooked?: () => void;
 }
 
 /**
@@ -22,33 +28,49 @@ function todayISO(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-export function BookingModal({ professional, isOpen, onClose }: BookingModalProps) {
+/**
+ * Combines a YYYY-MM-DD and HH:MM into an ISO timestamp in the user's
+ * local timezone. The backend expects an RFC 3339 datetime.
+ */
+function toISO(date: string, time: string): string {
+  // Constructing via `new Date('YYYY-MM-DDTHH:MM')` is interpreted as local
+  // time, which is what the user typed. `.toISOString()` then converts to UTC.
+  const d = new Date(`${date}T${time}:00`);
+  return d.toISOString();
+}
+
+export function BookingModal({ professional, isOpen, onClose, onBooked }: BookingModalProps) {
+  const { isAuthenticated } = useAuth();
+
   const [date, setDate] = useState("");
+  const [time, setTime] = useState("10:00");
   const [address, setAddress] = useState("");
   const [description, setDescription] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
 
-  // Stable, unique ids per modal instance — prevents collisions if the modal
-  // is ever rendered more than once on the same page.
   const reactId = useId();
   const titleId = `${reactId}-title`;
   const descId = `${reactId}-desc`;
   const dateId = `${reactId}-date`;
+  const timeId = `${reactId}-time`;
   const addressId = `${reactId}-address`;
   const workId = `${reactId}-work`;
 
   const minDate = todayISO();
-  const isFormValid = Boolean(date && address.trim() && description.trim());
+  const isFormValid = Boolean(date && time && address.trim() && description.trim());
 
-  // Reset internal state whenever the dialog transitions to closed, so a
-  // fresh form is shown next time it opens — even if the parent toggled
-  // `isOpen` directly without going through onClose().
+  // Reset on close so the next open shows a fresh form.
   useEffect(() => {
     if (!isOpen) {
       setDate("");
+      setTime("10:00");
       setAddress("");
       setDescription("");
       setConfirmed(false);
+      setSubmitting(false);
+      setSubmitError(null);
     }
   }, [isOpen]);
 
@@ -56,20 +78,36 @@ export function BookingModal({ professional, isOpen, onClose }: BookingModalProp
     if (!open) onClose();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isFormValid) return;
-    setConfirmed(true);
+    if (!isFormValid || !professional || submitting) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await createBooking({
+        professionalId: professional.id,
+        scheduledAt: toISO(date, time),
+        address: address.trim(),
+        description: description.trim(),
+      });
+      setConfirmed(true);
+      onBooked?.();
+    } catch (err: unknown) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : "Rezervasyon oluşturulamadı. Lütfen tekrar deneyin.";
+      setSubmitError(message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // Don't render if no professional has been selected. The parent currently
-  // guards this too, but defensive null-check keeps types tight.
   if (!professional) return null;
 
   return (
     <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
-        {/* Overlay — clicking it closes the dialog (Radix handles this) */}
         <Dialog.Overlay
           className="
             fixed inset-0 z-50 bg-black/50
@@ -77,12 +115,6 @@ export function BookingModal({ professional, isOpen, onClose }: BookingModalProp
             data-[state=closed]:animate-out data-[state=closed]:fade-out-0
           "
         />
-
-        {/* Content
-            - `aria-labelledby` is auto-wired to Dialog.Title by Radix
-            - `aria-describedby` is auto-wired to Dialog.Description by Radix
-            - `role="dialog"` and `aria-modal="true"` are applied automatically
-            - Focus trap, ESC key, click-outside, return-focus all handled  */}
         <Dialog.Content
           aria-labelledby={titleId}
           aria-describedby={descId}
@@ -114,15 +146,44 @@ export function BookingModal({ professional, isOpen, onClose }: BookingModalProp
             </Dialog.Close>
           </div>
 
-          {/* Visually-hidden description for screen readers (silences Radix
-              warning and gives extra context to AT users). */}
           <Dialog.Description id={descId} className="sr-only">
             {confirmed
               ? `${professional.name} ile yapılan rezervasyon onaylandı. Uzman sizi en kısa sürede arayacak.`
               : `${professional.title} ${professional.name} ile randevu oluşturmak için tarih, adres ve iş tanımını girin.`}
           </Dialog.Description>
 
-          {confirmed ? (
+          {/* ── Unauthenticated state ───────────────────────────────────── */}
+          {!isAuthenticated && !confirmed ? (
+            <div className="px-6 py-10 flex flex-col items-center gap-4 text-center">
+              <div className="w-16 h-16 rounded-full bg-orange-100 flex items-center justify-center">
+                <AlertCircle className="w-8 h-8 text-orange-500" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 text-lg">
+                  Önce Giriş Yapın
+                </p>
+                <p className="text-gray-500 text-sm mt-1">
+                  Rezervasyon oluşturmak için hesabınızla giriş yapmanız gerekiyor.
+                </p>
+              </div>
+              <div className="flex flex-col w-full gap-2 mt-2">
+                <Link
+                  to="/login"
+                  onClick={onClose}
+                  className="bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
+                >
+                  Giriş Yap
+                </Link>
+                <Link
+                  to="/register"
+                  onClick={onClose}
+                  className="border border-gray-300 hover:border-gray-400 text-gray-700 font-semibold py-2.5 rounded-lg text-sm transition-colors"
+                >
+                  Yeni Hesap Aç
+                </Link>
+              </div>
+            </div>
+          ) : confirmed ? (
             /* ── Success State ── */
             <div className="px-6 py-10 flex flex-col items-center gap-4 text-center">
               <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
@@ -180,30 +241,56 @@ export function BookingModal({ professional, isOpen, onClose }: BookingModalProp
                 </div>
               </div>
 
-              {/* Date */}
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor={dateId}
-                  className="text-sm font-medium text-gray-700"
-                >
-                  Tarih Seçin <span className="text-red-500" aria-hidden="true">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    id={dateId}
-                    type="date"
-                    value={date}
-                    min={minDate}
-                    onChange={(e) => setDate(e.target.value)}
-                    required
-                    aria-required="true"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 pr-10"
-                  />
-                  <Calendar
-                    size={16}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                    aria-hidden="true"
-                  />
+              {/* Date + Time */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label
+                    htmlFor={dateId}
+                    className="text-sm font-medium text-gray-700"
+                  >
+                    Tarih <span className="text-red-500" aria-hidden="true">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      id={dateId}
+                      type="date"
+                      value={date}
+                      min={minDate}
+                      onChange={(e) => setDate(e.target.value)}
+                      required
+                      aria-required="true"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 pr-10"
+                    />
+                    <Calendar
+                      size={16}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                      aria-hidden="true"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label
+                    htmlFor={timeId}
+                    className="text-sm font-medium text-gray-700"
+                  >
+                    Saat <span className="text-red-500" aria-hidden="true">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      id={timeId}
+                      type="time"
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
+                      required
+                      aria-required="true"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 pr-10"
+                    />
+                    <Clock
+                      size={16}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                      aria-hidden="true"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -248,19 +335,39 @@ export function BookingModal({ professional, isOpen, onClose }: BookingModalProp
                 />
               </div>
 
+              {/* Submit error */}
+              {submitError && (
+                <p className="flex items-start gap-2 text-red-600 text-sm bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                  <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                  <span>{submitError}</span>
+                </p>
+              )}
+
               {/* Actions */}
               <div className="flex gap-3 pt-1">
                 <Dialog.Close
                   className="flex-1 border border-gray-300 hover:border-gray-400 text-gray-700 font-semibold py-2.5 rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2"
+                  disabled={submitting}
                 >
                   İptal
                 </Dialog.Close>
                 <button
                   type="submit"
-                  disabled={!isFormValid}
-                  className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2"
+                  disabled={!isFormValid || submitting}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2 flex items-center justify-center gap-2"
                 >
-                  Rezervasyonu Onayla
+                  {submitting && (
+                    <svg
+                      className="animate-spin h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  )}
+                  {submitting ? "Gönderiliyor..." : "Rezervasyonu Onayla"}
                 </button>
               </div>
             </form>
