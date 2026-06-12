@@ -2,10 +2,12 @@
 
 Node.js + Express + Prisma + PostgreSQL backend for UzmanBaba.
 
-This currently implements the **auth** surface that the React frontend's
-`AuthContext` was already shaped for. The frontend's commented-out fetch
-blocks line up with these endpoints; switch the mock `return` statements
-for the real calls and the integration is done.
+Full API for the marketplace: auth (register/login/verify/reset), user
+profiles + avatar upload, professional listing/search/detail, the booking
+lifecycle (create → confirm → complete / cancel), and reviews with
+recomputed ratings. The React frontend is fully wired against it — the
+shared `api` client lives at `src/app/lib/api.ts` and every page reads from
+these endpoints.
 
 ## Endpoints
 
@@ -254,19 +256,19 @@ through a real provider (e.g. SendGrid, Postmark, Resend SMTP, Mailgun).
 
 ## Wiring the frontend
 
-The frontend's `AuthContext` already has commented-out fetch implementations
-pointed at `/api`. Two ways to wire them up:
+The frontend is already wired — every page goes through the shared client at
+`src/app/lib/api.ts`, which reads `VITE_API_URL` and defaults to `/api`.
+Pick one of two ways to point it at this backend:
 
-### Option A — env var
+### Option A — env var (no proxy)
 
 ```env
 # at the project root (not /backend)
 VITE_API_URL=http://localhost:4000/api
 ```
 
-Then in `src/app/context/AuthContext.tsx`, uncomment the `API_BASE` line and
-the production `fetch` blocks (and delete the `return mockRequest(...)`
-lines below them).
+The client builds absolute URLs against this origin; CORS on the backend
+already allows `http://localhost:5173`.
 
 ### Option B — Vite proxy
 
@@ -278,22 +280,34 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': { target: 'http://localhost:4000', changeOrigin: true },
+      '/uploads': { target: 'http://localhost:4000', changeOrigin: true },
     },
   },
 });
 ```
 
-With this, `API_BASE = '/api'` (the default) just works in development.
+With this, the client's default `/api` base just works — no env var needed.
+(The `/uploads` entry keeps locally-uploaded avatars rendering through the
+same origin.)
 
 ## Project layout
 
 ```
 backend/
+├── Dockerfile                  # multi-stage build, non-root runtime
+├── docker-compose.yml          # backend + Postgres + named volumes
 ├── prisma/
-│   └── schema.prisma           # User, EmailVerification, PasswordReset
+│   ├── schema.prisma           # User, Booking, Review, EmailVerification, PasswordReset
+│   └── seed.ts                 # sample professionals (npm run db:seed)
+├── tests/                      # vitest + supertest integration tests
+│   ├── setup.ts                # prisma db push against TEST_DATABASE_URL
+│   ├── helpers.ts              # app singleton, resetDb, register helpers
+│   ├── auth.test.ts
+│   ├── professionals.test.ts
+│   └── bookings.test.ts
 └── src/
     ├── index.ts                # boot + graceful shutdown
-    ├── app.ts                  # express factory
+    ├── app.ts                  # express factory (helmet, cors, static /uploads)
     ├── config.ts               # zod-validated env
     ├── prisma.ts               # shared PrismaClient
     ├── logger.ts               # tiny structured logger
@@ -301,18 +315,20 @@ backend/
     ├── middleware/
     │   ├── errorHandler.ts
     │   ├── requireAuth.ts
+    │   ├── requestLog.ts       # structured access log
     │   └── rateLimit.ts
     ├── utils/
     │   ├── password.ts         # bcrypt
     │   ├── jwt.ts              # sign / verify
     │   ├── token.ts            # numeric code + opaque token + sha256
+    │   ├── upload.ts           # multer disk storage for avatars
     │   └── email.ts            # nodemailer (or console fallback)
-    └── modules/
-        └── auth/
-            ├── auth.router.ts
-            ├── auth.service.ts
-            ├── auth.schemas.ts # zod request validation
-            └── auth.dto.ts     # User → API shape
+    └── modules/                # each: router / service / schemas / dto
+        ├── auth/               # register, login, verify, reset, change-password
+        ├── users/              # profile patch, avatar upload, account deletion
+        ├── professionals/      # listing, search, featured, detail
+        ├── bookings/           # lifecycle: create/confirm/complete/cancel
+        └── reviews/            # one per booking, recomputes pro rating
 ```
 
 ## Running with Docker

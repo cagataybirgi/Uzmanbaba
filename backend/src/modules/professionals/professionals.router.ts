@@ -43,7 +43,9 @@ professionalsRouter.get(
   "/:id/reviews",
   asyncHandler(async (req, res) => {
     const query = listProfessionalReviewsQuery.parse(req.query);
-    const result = await listProfessionalReviews(req.params.id, query);
+    // `!`: the route pattern guarantees the param; noUncheckedIndexedAccess
+    // just can't see that.
+    const result = await listProfessionalReviews(req.params.id!, query);
     res.status(200).json(result);
   }),
 );
@@ -52,7 +54,7 @@ professionalsRouter.get(
 professionalsRouter.get(
   "/:id",
   asyncHandler(async (req, res) => {
-    const item = await svc.getProfessional(req.params.id);
+    const item = await svc.getProfessional(req.params.id!);
     res.status(200).json({ item });
   }),
 );
