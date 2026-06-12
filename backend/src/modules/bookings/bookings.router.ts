@@ -49,11 +49,13 @@ bookingsRouter.get(
 );
 
 // ── PATCH /bookings/:id/cancel ──────────────────────────────────────────────
+// `req.params.id!`: the `/:id/...` route pattern guarantees the param exists;
+// noUncheckedIndexedAccess just can't see that.
 bookingsRouter.patch(
   "/:id/cancel",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const item = await svc.cancelBooking(req.auth!.sub, req.params.id);
+    const item = await svc.cancelBooking(req.auth!.sub, req.params.id!);
     res.status(200).json({ item });
   }),
 );
@@ -63,7 +65,7 @@ bookingsRouter.patch(
   "/:id/confirm",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const item = await svc.confirmBooking(req.auth!.sub, req.params.id);
+    const item = await svc.confirmBooking(req.auth!.sub, req.params.id!);
     res.status(200).json({ item });
   }),
 );
@@ -73,7 +75,7 @@ bookingsRouter.patch(
   "/:id/complete",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const item = await svc.completeBooking(req.auth!.sub, req.params.id);
+    const item = await svc.completeBooking(req.auth!.sub, req.params.id!);
     res.status(200).json({ item });
   }),
 );

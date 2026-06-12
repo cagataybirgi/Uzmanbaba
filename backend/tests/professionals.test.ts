@@ -106,13 +106,25 @@ describe("professionals", () => {
     expect(res.body.items[0].rating).toBeGreaterThanOrEqual(res.body.items[1].rating);
   });
 
-  it("detail endpoint returns the professional", async () => {
+  it("detail endpoint returns the professional with detail fields", async () => {
     const { ahmet } = await seedPros();
     const res = await request(app)
       .get(`/api/professionals/${ahmet.user.id}`)
       .expect(200);
     expect(res.body.item.id).toBe(ahmet.user.id);
     expect(res.body.item.name).toBe("Ahmet Yılmaz");
+    // Detail-page fields added to ProfessionalDto.
+    expect(res.body.item).toHaveProperty("bio");
+    expect(res.body.item.completedJobs).toBe(0);
+    // joinDate is "Ay YYYY" in Turkish (e.g. "Haziran 2026").
+    expect(res.body.item.joinDate).toMatch(/^\p{L}+ \d{4}$/u);
+  });
+
+  it("public reviews listing 404s for a non-professional id", async () => {
+    const { customer } = await seedPros();
+    await request(app)
+      .get(`/api/professionals/${customer.user.id}/reviews`)
+      .expect(404);
   });
 
   it("detail 404s for an unknown id", async () => {
