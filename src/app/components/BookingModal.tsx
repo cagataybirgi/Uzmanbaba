@@ -1,10 +1,19 @@
-import { useEffect, useId, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
-import { Link } from "react-router";
-import { X, Star, Calendar, Clock, CheckCircle2, AlertCircle } from "lucide-react";
-import { type Professional } from "./ProfessionalCard";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router";
+import {
+  Alert,
+  Button,
+  ButtonLink,
+  Field,
+  Input,
+  Modal,
+  ModalActions,
+  Photo,
+  Textarea,
+} from "./ds";
 import { useAuth } from "../context/AuthContext";
 import { createBooking } from "../data/bookings";
+import type { Professional } from "../data/professionals";
 import { ApiError } from "../lib/api";
 
 interface BookingModalProps {
@@ -39,8 +48,14 @@ function toISO(date: string, time: string): string {
   return d.toISOString();
 }
 
-export function BookingModal({ professional, isOpen, onClose, onBooked }: BookingModalProps) {
+export function BookingModal({
+  professional,
+  isOpen,
+  onClose,
+  onBooked,
+}: BookingModalProps) {
   const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
   const [date, setDate] = useState("");
   const [time, setTime] = useState("10:00");
@@ -50,16 +65,10 @@ export function BookingModal({ professional, isOpen, onClose, onBooked }: Bookin
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
 
-  const reactId = useId();
-  const titleId = `${reactId}-title`;
-  const descId = `${reactId}-desc`;
-  const dateId = `${reactId}-date`;
-  const timeId = `${reactId}-time`;
-  const addressId = `${reactId}-address`;
-  const workId = `${reactId}-work`;
-
   const minDate = todayISO();
-  const isFormValid = Boolean(date && time && address.trim() && description.trim());
+  const isFormValid = Boolean(
+    date && time && address.trim() && description.trim(),
+  );
 
   // Reset on close so the next open shows a fresh form.
   useEffect(() => {
@@ -73,10 +82,6 @@ export function BookingModal({ professional, isOpen, onClose, onBooked }: Bookin
       setSubmitError(null);
     }
   }, [isOpen]);
-
-  const handleOpenChange = (open: boolean) => {
-    if (!open) onClose();
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,275 +110,149 @@ export function BookingModal({ professional, isOpen, onClose, onBooked }: Bookin
 
   if (!professional) return null;
 
-  return (
-    <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay
-          className="
-            fixed inset-0 z-50 bg-black/50
-            data-[state=open]:animate-in data-[state=open]:fade-in-0
-            data-[state=closed]:animate-out data-[state=closed]:fade-out-0
-          "
-        />
-        <Dialog.Content
-          aria-labelledby={titleId}
-          aria-describedby={descId}
-          className="
-            fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2
-            w-[calc(100%-2rem)] max-w-md max-h-[90vh] overflow-y-auto
-            bg-white rounded-2xl shadow-2xl
-            focus:outline-none
-            data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95
-            data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95
-          "
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-            <Dialog.Title
-              id={titleId}
-              className="font-semibold text-gray-900 text-lg"
-            >
-              {confirmed
-                ? "Rezervasyon Onaylandı!"
-                : `${professional.name} ile Rezervasyon`}
-            </Dialog.Title>
+  const title = confirmed
+    ? "Rezervasyon Onaylandı"
+    : !isAuthenticated
+      ? "Önce Giriş Yap"
+      : "Rezervasyon Oluştur";
 
-            <Dialog.Close
-              className="text-gray-400 hover:text-gray-600 transition-colors rounded-md focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2"
-              aria-label="Modalı kapat"
+  const description_ = confirmed
+    ? `${professional.name} ile yapılan rezervasyon talebi alındı.`
+    : `${professional.name} ile randevu oluşturmak için tarih, adres ve iş tanımını girin.`;
+
+  return (
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title={title}
+      description={description_}
+    >
+      {/* ── Unauthenticated ──────────────────────────────────────────── */}
+      {!isAuthenticated && !confirmed ? (
+        <>
+          <p className="t-body max-w-[44ch]">
+            Rezervasyon oluşturmak için hesabınızla giriş yapmanız gerekiyor.
+            Hesabın yoksa dakikalar içinde oluşturabilirsin.
+          </p>
+          <ModalActions>
+            <ButtonLink to="/login" variant="primary" onClick={onClose}>
+              Giriş Yap
+            </ButtonLink>
+            <ButtonLink to="/register" variant="secondary" onClick={onClose}>
+              Yeni Hesap Aç
+            </ButtonLink>
+          </ModalActions>
+        </>
+      ) : confirmed ? (
+        /* ── Success ────────────────────────────────────────────────── */
+        <>
+          <p className="t-body max-w-[44ch]">
+            Talebin {professional.name} adlı uzmana iletildi. Uzman
+            onayladığında bildirim alacaksın; rezervasyonu panelinden takip
+            edebilirsin.
+          </p>
+          <ModalActions>
+            <Button
+              variant="primary"
+              onClick={() => {
+                onClose();
+                navigate("/dashboard?tab=bookings");
+              }}
             >
-              <X size={20} />
-            </Dialog.Close>
+              Panelime Git
+            </Button>
+            <Button variant="secondary" onClick={onClose}>
+              Kapat
+            </Button>
+          </ModalActions>
+        </>
+      ) : (
+        /* ── Form ───────────────────────────────────────────────────── */
+        <form onSubmit={handleSubmit} noValidate>
+          <div className="mb-6 flex items-center gap-4 border-y-2 border-rule py-4">
+            <Photo src={professional.avatar} name={professional.name} alt="" size={56} />
+            <div className="min-w-0">
+              <p className="truncate font-display text-[17px] font-extrabold">
+                {professional.name}
+              </p>
+              <p className="truncate text-sm text-ink/70">
+                {professional.title}
+              </p>
+            </div>
           </div>
 
-          <Dialog.Description id={descId} className="sr-only">
-            {confirmed
-              ? `${professional.name} ile yapılan rezervasyon onaylandı. Uzman sizi en kısa sürede arayacak.`
-              : `${professional.title} ${professional.name} ile randevu oluşturmak için tarih, adres ve iş tanımını girin.`}
-          </Dialog.Description>
-
-          {/* ── Unauthenticated state ───────────────────────────────────── */}
-          {!isAuthenticated && !confirmed ? (
-            <div className="px-6 py-10 flex flex-col items-center gap-4 text-center">
-              <div className="w-16 h-16 rounded-full bg-orange-100 flex items-center justify-center">
-                <AlertCircle className="w-8 h-8 text-orange-500" />
-              </div>
-              <div>
-                <p className="font-semibold text-gray-900 text-lg">
-                  Önce Giriş Yapın
-                </p>
-                <p className="text-gray-500 text-sm mt-1">
-                  Rezervasyon oluşturmak için hesabınızla giriş yapmanız gerekiyor.
-                </p>
-              </div>
-              <div className="flex flex-col w-full gap-2 mt-2">
-                <Link
-                  to="/login"
-                  onClick={onClose}
-                  className="bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
-                >
-                  Giriş Yap
-                </Link>
-                <Link
-                  to="/register"
-                  onClick={onClose}
-                  className="border border-gray-300 hover:border-gray-400 text-gray-700 font-semibold py-2.5 rounded-lg text-sm transition-colors"
-                >
-                  Yeni Hesap Aç
-                </Link>
-              </div>
-            </div>
-          ) : confirmed ? (
-            /* ── Success State ── */
-            <div className="px-6 py-10 flex flex-col items-center gap-4 text-center">
-              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
-                <CheckCircle2 className="w-8 h-8 text-green-500" />
-              </div>
-              <div>
-                <p className="font-semibold text-gray-900 text-lg">
-                  Rezervasyonunuz Alındı
-                </p>
-                <p className="text-gray-500 text-sm mt-1">
-                  {professional.name} sizi en kısa sürede arayacak. Baba sorunu
-                  çözer!
-                </p>
-              </div>
-              <Dialog.Close
-                className="mt-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2 px-8 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2"
-              >
-                Tamam
-              </Dialog.Close>
-            </div>
-          ) : (
-            /* ── Booking Form ── */
-            <form
-              onSubmit={handleSubmit}
-              className="px-6 py-5 flex flex-col gap-5"
-              noValidate
-            >
-              {/* Professional Info */}
-              <div className="flex items-center gap-4 bg-orange-50 rounded-xl p-4">
-                <div className="w-14 h-14 rounded-full overflow-hidden flex-shrink-0 border-2 border-orange-300">
-                  <img
-                    src={professional.avatar}
-                    alt=""
-                    className="w-full h-full object-cover object-top"
+          <div className="flex flex-col gap-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Tarih" required>
+                {(field) => (
+                  <Input
+                    {...field}
+                    type="date"
+                    value={date}
+                    min={minDate}
+                    onChange={(e) => setDate(e.target.value)}
+                    required
                   />
-                </div>
-                <div>
-                  <p className="font-semibold text-gray-900">
-                    {professional.name}
-                  </p>
-                  <p className="text-gray-500 text-sm">{professional.title}</p>
-                  <div className="flex items-center gap-1 mt-1">
-                    <Star
-                      size={12}
-                      className="fill-orange-500 text-orange-500"
-                      aria-hidden="true"
-                    />
-                    <span className="text-gray-700 text-xs font-medium">
-                      {professional.rating}
-                    </span>
-                    <span className="text-gray-400 text-xs">
-                      ({professional.reviews} değerlendirme)
-                    </span>
-                  </div>
-                </div>
-              </div>
+                )}
+              </Field>
+              <Field label="Saat" required>
+                {(field) => (
+                  <Input
+                    {...field}
+                    type="time"
+                    value={time}
+                    onChange={(e) => setTime(e.target.value)}
+                    required
+                  />
+                )}
+              </Field>
+            </div>
 
-              {/* Date + Time */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label
-                    htmlFor={dateId}
-                    className="text-sm font-medium text-gray-700"
-                  >
-                    Tarih <span className="text-red-500" aria-hidden="true">*</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      id={dateId}
-                      type="date"
-                      value={date}
-                      min={minDate}
-                      onChange={(e) => setDate(e.target.value)}
-                      required
-                      aria-required="true"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 pr-10"
-                    />
-                    <Calendar
-                      size={16}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                      aria-hidden="true"
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label
-                    htmlFor={timeId}
-                    className="text-sm font-medium text-gray-700"
-                  >
-                    Saat <span className="text-red-500" aria-hidden="true">*</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      id={timeId}
-                      type="time"
-                      value={time}
-                      onChange={(e) => setTime(e.target.value)}
-                      required
-                      aria-required="true"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 pr-10"
-                    />
-                    <Clock
-                      size={16}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                      aria-hidden="true"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Address */}
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor={addressId}
-                  className="text-sm font-medium text-gray-700"
-                >
-                  Adresinizi Girin <span className="text-red-500" aria-hidden="true">*</span>
-                </label>
-                <input
-                  id={addressId}
+            <Field label="Adres" required>
+              {(field) => (
+                <Input
+                  {...field}
                   type="text"
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Tam hizmet adresini girin..."
+                  placeholder="Tam hizmet adresini girin…"
                   autoComplete="street-address"
                   required
-                  aria-required="true"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
                 />
-              </div>
+              )}
+            </Field>
 
-              {/* Work Description */}
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor={workId}
-                  className="text-sm font-medium text-gray-700"
-                >
-                  İş Tanımı <span className="text-red-500" aria-hidden="true">*</span>
-                </label>
-                <textarea
-                  id={workId}
+            <Field label="İş tanımı" required>
+              {(field) => (
+                <Textarea
+                  {...field}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Sorunu ayrıntılı olarak açıklayın..."
-                  rows={4}
+                  placeholder="İşin detaylarını kısaca yaz…"
                   required
-                  aria-required="true"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 resize-none"
                 />
-              </div>
-
-              {/* Submit error */}
-              {submitError && (
-                <p className="flex items-start gap-2 text-red-600 text-sm bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-                  <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
-                  <span>{submitError}</span>
-                </p>
               )}
+            </Field>
 
-              {/* Actions */}
-              <div className="flex gap-3 pt-1">
-                <Dialog.Close
-                  className="flex-1 border border-gray-300 hover:border-gray-400 text-gray-700 font-semibold py-2.5 rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2"
-                  disabled={submitting}
-                >
-                  İptal
-                </Dialog.Close>
-                <button
-                  type="submit"
-                  disabled={!isFormValid || submitting}
-                  className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2 flex items-center justify-center gap-2"
-                >
-                  {submitting && (
-                    <svg
-                      className="animate-spin h-4 w-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                  )}
-                  {submitting ? "Gönderiliyor..." : "Rezervasyonu Onayla"}
-                </button>
-              </div>
-            </form>
-          )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            {submitError && <Alert tone="error">{submitError}</Alert>}
+          </div>
+
+          <ModalActions>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!isFormValid}
+              loading={submitting}
+              loadingLabel="Gönderiliyor…"
+            >
+              Rezervasyonu Onayla
+            </Button>
+            <Button variant="secondary" onClick={onClose} disabled={submitting}>
+              Vazgeç
+            </Button>
+          </ModalActions>
+        </form>
+      )}
+    </Modal>
   );
 }

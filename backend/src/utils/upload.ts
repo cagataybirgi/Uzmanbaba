@@ -83,6 +83,46 @@ export function localPathFromAvatarUrl(avatar: string): string | null {
 }
 
 /**
+ * Content-based image check. Multer's fileFilter only sees the client-declared
+ * MIME type, which is trivially spoofable — a `.exe` renamed and sent with
+ * `Content-Type: image/png` sails through. This inspects the actual leading
+ * bytes of the written file against known image magic numbers, so we store
+ * real images only. Call it AFTER multer has written the file to disk.
+ */
+export async function fileHasImageSignature(absPath: string): Promise<boolean> {
+  let handle: fs.promises.FileHandle | undefined;
+  try {
+    handle = await fs.promises.open(absPath, "r");
+    const buf = Buffer.alloc(12);
+    const { bytesRead } = await handle.read(buf, 0, 12, 0);
+    const b = buf.subarray(0, bytesRead);
+    // JPEG: FF D8 FF
+    if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return true;
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (
+      b.length >= 8 &&
+      b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 &&
+      b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a
+    ) {
+      return true;
+    }
+    // WEBP: "RIFF" .... "WEBP"
+    if (
+      b.length >= 12 &&
+      b.toString("ascii", 0, 4) === "RIFF" &&
+      b.toString("ascii", 8, 12) === "WEBP"
+    ) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  } finally {
+    await handle?.close();
+  }
+}
+
+/**
  * Best-effort delete. Logs are kept lightweight (caller logs the context) so
  * an orphaned file in storage isn't worth taking down the request over.
  */

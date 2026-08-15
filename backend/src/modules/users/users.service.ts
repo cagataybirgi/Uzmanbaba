@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../../prisma.js";
 import { AppError } from "../../errors.js";
 import { hashPassword, verifyPassword } from "../../utils/password.js";
+import { signAccessToken } from "../../utils/jwt.js";
 import { deleteLocalUpload, localPathFromAvatarUrl } from "../../utils/upload.js";
 import { logger } from "../../logger.js";
 import { toUserDto, type UserDto } from "../auth/auth.dto.js";
@@ -55,7 +56,7 @@ export async function updateMe(
 export async function changePassword(
   userId: string,
   input: ChangePasswordInput,
-): Promise<void> {
+): Promise<{ token: string }> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw AppError.unauthorized();
 
@@ -71,17 +72,27 @@ export async function changePassword(
 
   // Voiding outstanding reset tokens prevents a stolen-but-unused email
   // link from re-flipping the password after the legitimate owner just
-  // changed it.
-  await prisma.$transaction([
+  // changed it. The tokenVersion bump revokes every existing JWT — we
+  // return a freshly signed token so the session that made the change
+  // stays logged in.
+  const [updated] = await prisma.$transaction([
     prisma.user.update({
       where: { id: userId },
-      data: { passwordHash },
+      data: { passwordHash, tokenVersion: { increment: 1 } },
     }),
     prisma.passwordReset.updateMany({
       where: { userId, consumedAt: null },
       data: { consumedAt: new Date() },
     }),
   ]);
+
+  return {
+    token: signAccessToken({
+      sub: updated.id,
+      email: updated.email,
+      ver: updated.tokenVersion,
+    }),
+  };
 }
 
 /* ─── POST /users/me/avatar ──────────────────────────────────────────────── */
@@ -123,7 +134,10 @@ export async function deleteMe(
   userId: string,
   input: DeleteMeInput,
 ): Promise<void> {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { passwordHash: true, avatar: true },
+  });
   if (!user) throw AppError.unauthorized();
 
   const ok = await verifyPassword(input.password, user.passwordHash);
@@ -134,9 +148,40 @@ export async function deleteMe(
     });
   }
 
+  // Reviews this user wrote will cascade-delete with them. Any professional
+  // they reviewed must have their rating/reviewsCount recomputed afterwards,
+  // otherwise deleting one customer silently corrupts public ratings.
+  const authored = await prisma.review.findMany({
+    where: { authorId: userId },
+    select: { professionalId: true },
+  });
+  const affectedProIds = [...new Set(authored.map((r) => r.professionalId))].filter(
+    (id) => id !== userId,
+  );
+
   // Relations on User use `onDelete: Cascade`, so the User row is enough —
   // bookings, reviews, verification rows, etc. all go with it. If you ever
   // need a soft-delete (GDPR audit retention, dispute resolution), switch
   // this to flip a `deletedAt` and exclude it from queries instead.
-  await prisma.user.delete({ where: { id: userId } });
+  await prisma.$transaction(async (tx) => {
+    await tx.user.delete({ where: { id: userId } });
+    for (const proId of affectedProIds) {
+      const agg = await tx.review.aggregate({
+        where: { professionalId: proId },
+        _avg: { rating: true },
+        _count: { _all: true },
+      });
+      await tx.user.update({
+        where: { id: proId },
+        data: { rating: agg._avg.rating ?? null, reviewsCount: agg._count._all },
+      });
+    }
+  });
+
+  // Best-effort: remove the user's uploaded avatar from disk (KVKK/GDPR —
+  // don't retain a face photo after the account is gone). External avatars
+  // (Unsplash, etc.) resolve to null and are skipped. An orphaned file is
+  // not worth failing the already-committed deletion over.
+  const avatarPath = localPathFromAvatarUrl(user.avatar);
+  if (avatarPath) await deleteLocalUpload(avatarPath);
 }

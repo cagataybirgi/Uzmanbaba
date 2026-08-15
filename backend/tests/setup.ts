@@ -7,9 +7,8 @@ import { execSync } from "node:child_process";
  *   passes regardless of the developer's shell env.
  * - Points DATABASE_URL at TEST_DATABASE_URL (must be different from the dev
  *   DB so nobody's hand-typed seed data gets wiped).
- * - Uses `prisma db push` instead of migrate deploy — it syncs the schema
- *   against whatever state the test DB is in, without caring about migration
- *   history. Perfect for ephemeral test setups.
+ * - Runs `prisma migrate deploy` so the committed migrations are the single
+ *   source of truth for the test schema, same as production.
  */
 export default async function setup() {
   process.env.NODE_ENV = "test";
@@ -31,8 +30,11 @@ export default async function setup() {
   }
   process.env.DATABASE_URL = testDbUrl;
 
-  // Sync schema. `--accept-data-loss` is intentional: this is the TEST DB.
-  execSync("npx prisma db push --accept-data-loss --skip-generate", {
+  // Apply the committed migrations. Using `migrate deploy` (not `db push`)
+  // means the suite also verifies that the production migration path works
+  // — if someone edits schema.prisma without creating a migration, tests
+  // fail here instead of production failing later.
+  execSync("npx prisma migrate deploy", {
     stdio: "inherit",
     env: { ...process.env, DATABASE_URL: testDbUrl },
   });

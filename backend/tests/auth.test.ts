@@ -1,5 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
+import { createHash, randomBytes } from "node:crypto";
+import { prisma } from "../src/prisma.js";
 import { closeDb, getApp, register, resetDb } from "./helpers.js";
 
 const app = getApp();
@@ -101,5 +103,84 @@ describe("auth", () => {
       .expect(200);
     expect(res.body.user.id).toBe(user.id);
     expect(res.body.user.email).toBe("me@uzmanbaba.test");
+  });
+
+  it("change-password revokes old tokens and returns a working fresh one", async () => {
+    const { token: oldToken } = await register(app, {
+      email: "rotate@uzmanbaba.test",
+      password: "OldPass123!",
+    });
+
+    // Sanity: old token works before the change.
+    await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${oldToken}`)
+      .expect(200);
+
+    const changed = await request(app)
+      .post("/api/auth/change-password")
+      .set("Authorization", `Bearer ${oldToken}`)
+      .send({ currentPassword: "OldPass123!", newPassword: "NewPass456!" })
+      .expect(200);
+    expect(changed.body.token).toBeTruthy();
+
+    // Old token is dead; the freshly returned one works.
+    await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${oldToken}`)
+      .expect(401);
+    await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${changed.body.token}`)
+      .expect(200);
+
+    // Old password no longer logs in; new one does.
+    await request(app)
+      .post("/api/auth/login")
+      .send({ email: "rotate@uzmanbaba.test", password: "OldPass123!" })
+      .expect(401);
+    await request(app)
+      .post("/api/auth/login")
+      .send({ email: "rotate@uzmanbaba.test", password: "NewPass456!" })
+      .expect(200);
+  });
+
+  it("reset-password consumes the token, revokes old sessions, sets the new password", async () => {
+    const { token: oldToken, user } = await register(app, {
+      email: "reset@uzmanbaba.test",
+      password: "OldPass123!",
+    });
+
+    // Plant a reset token directly (the email path only logs it in dev).
+    const rawToken = randomBytes(32).toString("base64url");
+    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    await prisma.passwordReset.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        expiresAt: new Date(Date.now() + 60 * 60_000),
+      },
+    });
+
+    await request(app)
+      .post("/api/auth/reset-password")
+      .send({ token: rawToken, password: "AfterReset789!" })
+      .expect(200);
+
+    // Session issued before the reset is revoked.
+    await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${oldToken}`)
+      .expect(401);
+
+    // New password works; token is one-shot.
+    await request(app)
+      .post("/api/auth/login")
+      .send({ email: "reset@uzmanbaba.test", password: "AfterReset789!" })
+      .expect(200);
+    await request(app)
+      .post("/api/auth/reset-password")
+      .send({ token: rawToken, password: "SecondTry000!" })
+      .expect(400);
   });
 });

@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, ApiError } from "../lib/api";
+import { api, ApiError, SESSION_EXPIRED_EVENT } from "../lib/api";
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * TYPES
@@ -218,6 +218,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("storage", handler);
   }, []);
 
+  /* ── Session expiry ─────────────────────────────────────────────────────
+   * The api client clears localStorage and fires this event when a request
+   * that carried a token gets a 401 (expired / revoked / user deleted).
+   * Mirroring it into React state flips isAuthenticated, which sends
+   * ProtectedRoute users back to /login automatically.
+   * ──────────────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    const handler = () => clearAuth();
+    window.addEventListener(SESSION_EXPIRED_EVENT, handler);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handler);
+  }, [clearAuth]);
+
   /* ── Public actions ─────────────────────────────────────────────────── */
 
   const login = useCallback(
@@ -316,10 +328,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const changePassword = useCallback(
     async ({ currentPassword, newPassword }: ChangePasswordPayload) => {
-      await api.post<{ ok: true }>("/auth/change-password", {
-        currentPassword,
-        newPassword,
-      });
+      // The backend bumps tokenVersion (revoking every prior JWT) and
+      // returns a fresh token so this session survives the change.
+      const res = await api.post<{ ok: true; token: string }>(
+        "/auth/change-password",
+        { currentPassword, newPassword },
+      );
+      setToken(res.token);
+      storage.setString(STORAGE_KEYS.token, res.token);
     },
     [],
   );

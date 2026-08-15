@@ -47,6 +47,15 @@ const PROS: ProSeed[] = [
 ];
 
 async function main() {
+  // Hard stop: this seed creates verified accounts with a shared, published
+  // password ("Password123!"). Running it against production would plant six
+  // known-credential accounts. Never in prod.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Refusing to run the demo seed with NODE_ENV=production (known credentials).",
+    );
+  }
+
   // Shared dev password so it's easy to log in as any seeded user.
   const passwordHash = await bcrypt.hash("Password123!", 12);
 

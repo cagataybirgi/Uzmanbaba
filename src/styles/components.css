@@ -1,0 +1,187 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Structural component styles.
+ *
+ * Only patterns that CSS expresses better than utilities live here — the
+ * responsive data table, the ruled row grid and the sticky-header offsets.
+ * Everything else is built from tokens inside the React primitives under
+ * src/app/components/ds.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+@layer components {
+  /* ── Data table ─────────────────────────────────────────────────────────
+   * Desktop: a themed header rule over 1px row rules — the system's table.
+   * Under 768px the same markup collapses into stacked records, each cell
+   * labelled from its `data-label`, so no dashboard table ever needs a
+   * horizontal scrollbar on a phone.
+   * ──────────────────────────────────────────────────────────────────── */
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  .data-table th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(32, 30, 29, 0.6);
+    padding: 10px 8px;
+    border-bottom: var(--rule-width) solid var(--color-rule);
+    white-space: nowrap;
+  }
+
+  .data-table td {
+    padding: 14px 8px;
+    border-bottom: 1px solid var(--color-rule-soft);
+    vertical-align: middle;
+  }
+
+  .data-table tbody tr:last-child td {
+    border-bottom: 1px solid var(--color-rule-soft);
+  }
+
+  .data-table tbody tr:hover {
+    background: rgba(32, 30, 29, 0.04);
+  }
+
+  .data-table th:first-child,
+  .data-table td:first-child {
+    padding-left: 0;
+  }
+
+  .data-table th:last-child,
+  .data-table td:last-child {
+    padding-right: 0;
+  }
+
+  @media (max-width: 767px) {
+    .data-table,
+    .data-table tbody,
+    .data-table tr,
+    .data-table td {
+      display: block;
+      width: 100%;
+    }
+
+    /* Headers stay in the accessibility tree, out of the visual flow. */
+    .data-table thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .data-table tbody tr {
+      border-bottom: var(--rule-width) solid var(--color-rule);
+      padding: 18px 0;
+    }
+
+    .data-table tbody tr:hover {
+      background: transparent;
+    }
+
+    .data-table td {
+      border: 0;
+      padding: 5px 0;
+      display: flex;
+      gap: 20px;
+      align-items: baseline;
+      justify-content: space-between;
+      text-align: left;
+    }
+
+    .data-table td::before {
+      content: attr(data-label);
+      flex: none;
+      font-size: 11px;
+      line-height: 20px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(32, 30, 29, 0.6);
+    }
+
+    .data-table td:not([data-label])::before {
+      content: none;
+    }
+
+    /* Action cells sit full-width under the record, buttons flush left. */
+    .data-table td[data-role="actions"] {
+      justify-content: flex-start;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding-top: 12px;
+    }
+
+    .data-table td[data-role="media"] {
+      padding-bottom: 8px;
+    }
+
+    /* Two-column key/value tables (profile stats, account summaries) read
+       fine at any width — they opt out of stacking and stay a table. */
+    .data-table.no-stack,
+    .data-table.no-stack tbody,
+    .data-table.no-stack tr {
+      display: revert;
+      width: auto;
+    }
+
+    .data-table.no-stack {
+      display: table;
+      width: 100%;
+    }
+
+    .data-table.no-stack td {
+      display: table-cell;
+      padding: 14px 8px;
+      border-bottom: 1px solid var(--color-rule-soft);
+    }
+
+    .data-table.no-stack tbody tr {
+      padding: 0;
+      border-bottom: 0;
+    }
+
+    .data-table.no-stack td::before {
+      content: none;
+    }
+  }
+
+  /* ── Ruled row ──────────────────────────────────────────────────────────
+   * The numbered editorial row used by the services list and every info
+   * page: index / title / body across a three-column grid, separated by
+   * 2px rules. Collapses to a single column on small screens.
+   * ──────────────────────────────────────────────────────────────────── */
+
+  .ruled-row {
+    display: grid;
+    grid-template-columns: minmax(64px, 160px) minmax(0, 420px) minmax(0, 1fr);
+    gap: 14px clamp(24px, 4vw, 72px);
+    align-items: baseline;
+    padding: clamp(28px, 4vw, 42px) 0;
+    border-top: var(--rule-width) solid var(--color-rule);
+  }
+
+  @media (max-width: 767px) {
+    .ruled-row {
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+  }
+
+  /* ── Sticky offset ──────────────────────────────────────────────────────
+   * The header is 56px tall at every width; anything that sticks beneath it
+   * reads its offset from here rather than guessing.
+   * ──────────────────────────────────────────────────────────────────── */
+
+  .below-header {
+    top: 56px;
+  }
+}
