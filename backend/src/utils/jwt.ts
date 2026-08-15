@@ -5,6 +5,11 @@ import { AppError } from "../errors.js";
 export interface JwtPayload {
   sub: string; // user id
   email: string;
+  // Token version at signing time. Compared against User.tokenVersion in
+  // requireAuth; a mismatch means the password changed (or sessions were
+  // revoked) after this token was issued. Optional for backward compat
+  // with tokens signed before the field existed — treated as 0.
+  ver?: number;
 }
 
 export function signAccessToken(payload: JwtPayload): string {

@@ -20,9 +20,10 @@ import { requestLog } from "./middleware/requestLog.js";
 export function buildApp(): Express {
   const app = express();
 
-  // Behind a reverse proxy (Nginx, fly.io, etc.) so req.ip reflects the real
-  // client IP — needed for accurate rate-limit keying.
-  app.set("trust proxy", 1);
+  // How many proxy hops to trust for req.ip (used for rate-limit keying).
+  // Gated behind TRUST_PROXY so a direct-exposure deploy defaults to trusting
+  // nobody — otherwise a spoofed X-Forwarded-For would bypass rate limits.
+  app.set("trust proxy", config.TRUST_PROXY);
 
   app.use(
     helmet({

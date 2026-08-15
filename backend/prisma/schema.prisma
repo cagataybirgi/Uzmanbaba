@@ -12,6 +12,11 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // NOTE (Neon): migrations should use a DIRECT (unpooled) connection — the
+  // PgBouncer pooler can't run them reliably. To enable, add DIRECT_DATABASE_URL
+  // to your .env (Neon console → unpooled host, i.e. the URL without "-pooler")
+  // and uncomment the line below. See backend/README.md → "Neon: pooled vs direct".
+  // directUrl = env("DIRECT_DATABASE_URL")
 }
 
 enum AccountType {
@@ -20,10 +25,10 @@ enum AccountType {
 }
 
 enum BookingStatus {
-  pending     // created by the customer, awaiting confirmation
-  confirmed   // professional has confirmed
-  completed   // work done
-  cancelled   // either side cancelled
+  pending // created by the customer, awaiting confirmation
+  confirmed // professional has confirmed
+  completed // work done
+  cancelled // either side cancelled
 }
 
 model User {
@@ -32,6 +37,10 @@ model User {
   name          String
   phone         String      @default("")
   passwordHash  String
+  // Bumped on password change/reset. JWTs embed the version they were
+  // signed with; requireAuth rejects tokens whose version no longer
+  // matches, which is how we revoke sessions despite stateless JWTs.
+  tokenVersion  Int         @default(0)
   accountType   AccountType @default(customer)
   emailVerified Boolean     @default(false)
 
@@ -43,12 +52,12 @@ model User {
   // Professional-only fields. Safe to leave at defaults for customers — the
   // GET /professionals endpoints scope by accountType so they're never read
   // for non-professional users.
-  available     Boolean @default(true)
-  reviewsCount  Int     @default(0)
+  available    Boolean @default(true)
+  reviewsCount Int     @default(0)
 
-  rating         Float? // null until first review
-  completedJobs  Int    @default(0)
-  pendingJobs    Int    @default(0)
+  rating        Float? // null until first review
+  completedJobs Int    @default(0)
+  pendingJobs   Int    @default(0)
 
   // Notification preferences. Flat booleans rather than a JSON blob so they
   // stay queryable (e.g. "send tonight's reminder to everyone with
@@ -86,7 +95,7 @@ model Booking {
   professionalId String @db.Uuid
   professional   User   @relation("ProfessionalBookings", fields: [professionalId], references: [id], onDelete: Cascade)
 
-  service     String        // snapshot of professional.specialty
+  service     String // snapshot of professional.specialty
   scheduledAt DateTime
   address     String
   description String
@@ -118,7 +127,7 @@ model Review {
   professionalId String @db.Uuid
   professional   User   @relation("ReviewsReceived", fields: [professionalId], references: [id], onDelete: Cascade)
 
-  rating  Int     // 1-5 (enforced in the service layer / zod)
+  rating  Int // 1-5 (enforced in the service layer / zod)
   comment String?
 
   createdAt DateTime @default(now())
@@ -133,7 +142,7 @@ model EmailVerification {
   id         String    @id @default(uuid()) @db.Uuid
   userId     String    @db.Uuid
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  code       String    // plain 6-digit code, short-lived
+  code       String // plain 6-digit code, short-lived
   expiresAt  DateTime
   consumedAt DateTime?
   createdAt  DateTime  @default(now())

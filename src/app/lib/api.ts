@@ -16,6 +16,25 @@ const API_BASE: string =
   (import.meta.env.VITE_API_URL as string | undefined) ?? "/api";
 
 const TOKEN_KEY = "uzmanbaba.auth.token";
+const USER_KEY = "uzmanbaba.auth.user";
+const PENDING_EMAIL_KEY = "uzmanbaba.auth.pendingEmail";
+
+/**
+ * Fired on window when a request that carried a Bearer token got a 401 —
+ * i.e. the token is expired or revoked. AuthContext listens and clears its
+ * state so the UI drops back to logged-out instead of error-looping.
+ */
+export const SESSION_EXPIRED_EVENT = "uzmanbaba:session-expired";
+
+function clearStoredAuth(): void {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(PENDING_EMAIL_KEY);
+  } catch {
+    /* storage unavailable — nothing to clear */
+  }
+}
 
 export class ApiError extends Error {
   status: number;
@@ -83,9 +102,13 @@ async function request<T>(
     headers["Content-Type"] = "application/json";
   }
 
+  let sentAuthToken = false;
   if (opts.auth !== false) {
     const token = readToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+      sentAuthToken = true;
+    }
   }
 
   const body =
@@ -114,6 +137,20 @@ async function request<T>(
   const json = text ? safeJson(text) : null;
 
   if (!res.ok) {
+    // A 401 on a request that actually carried a token means the token is
+    // dead (expired, revoked, or the user was deleted). Clear local auth
+    // and broadcast so the app returns to logged-out state. Requests made
+    // with `auth: false` (login itself) are exempt — their 401 means
+    // "wrong credentials", not "session expired".
+    if (res.status === 401 && sentAuthToken) {
+      clearStoredAuth();
+      try {
+        window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+      } catch {
+        /* non-browser context */
+      }
+    }
+
     const err = (json as { error?: { code?: string; message?: string; details?: unknown } } | null)
       ?.error;
     throw new ApiError(

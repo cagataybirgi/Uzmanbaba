@@ -68,3 +68,11 @@ export interface ListProfessionalsResponse {
   pageSize: number;
   totalPages: number;
 }
+
+/** Aggregates the public site may present as factual trust metrics. */
+export interface ProfessionalStatsDto {
+  emailVerifiedProfessionals: number;
+  citiesServed: number;
+  averageRating: number | null;
+  completedJobs: number;
+}

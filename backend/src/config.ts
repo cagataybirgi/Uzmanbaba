@@ -27,6 +27,12 @@ const envSchema = z.object({
 
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
 
+  // Number of reverse-proxy hops to trust for req.ip (Express "trust proxy").
+  // Default 0 = trust nobody, so a direct-exposure deploy can't be tricked by
+  // a spoofed X-Forwarded-For into defeating per-IP rate limiting. Set to 1
+  // (or the real hop count) when running behind Nginx/fly.io/etc.
+  TRUST_PROXY: z.coerce.number().int().min(0).default(0),
+
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_SECURE: z

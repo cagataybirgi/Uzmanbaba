@@ -36,6 +36,16 @@ professionalsRouter.get(
   }),
 );
 
+// ── GET /professionals/stats ────────────────────────────────────────────────
+// Listed before `/:id` so the literal path wins over the param route.
+professionalsRouter.get(
+  "/stats",
+  asyncHandler(async (_req, res) => {
+    const stats = await svc.getProfessionalStats();
+    res.status(200).json({ stats });
+  }),
+);
+
 // ── GET /professionals/:id/reviews ──────────────────────────────────────────
 // Mounted before the bare /:id so the literal sub-path doesn't get caught by
 // the param route's handler in some Express versions.

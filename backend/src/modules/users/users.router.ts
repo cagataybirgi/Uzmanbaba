@@ -2,7 +2,13 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { requireAuth } from "../../middleware/requireAuth.js";
 import { prisma } from "../../prisma.js";
 import { AppError } from "../../errors.js";
-import { avatarUpload, mapMulterError } from "../../utils/upload.js";
+import {
+  avatarUpload,
+  deleteLocalUpload,
+  fileHasImageSignature,
+  mapMulterError,
+} from "../../utils/upload.js";
+import { avatarUploadLimiter } from "../../middleware/rateLimit.js";
 import { toUserDto } from "../auth/auth.dto.js";
 import { deleteMeSchema, updateMeSchema } from "./users.schemas.js";
 import * as svc from "./users.service.js";
@@ -41,11 +47,13 @@ usersRouter.patch(
 );
 
 // ── POST /users/me/avatar ───────────────────────────────────────────────────
-// multipart/form-data with a single `file` field. Multer validates size +
-// MIME, writes the file to disk, and exposes it on `req.file`.
+// multipart/form-data with a single `file` field. Multer enforces size + the
+// declared MIME type and writes to disk; we then verify the file's actual
+// bytes are a real image before keeping it.
 usersRouter.post(
   "/me/avatar",
   requireAuth,
+  avatarUploadLimiter,
   // We wrap multer in a custom middleware so its errors (size, MIME) get
   // mapped to our standard AppError shape instead of leaking raw multer codes.
   (req, res, next) => {
@@ -58,6 +66,16 @@ usersRouter.post(
   asyncHandler(async (req, res) => {
     if (!req.file) {
       throw AppError.badRequest("Dosya bulunamadı.");
+    }
+    // Content check: the declared MIME type is spoofable, so confirm the
+    // bytes on disk are actually a JPEG/PNG/WebP. Reject + clean up if not.
+    const looksLikeImage = await fileHasImageSignature(req.file.path);
+    if (!looksLikeImage) {
+      await deleteLocalUpload(req.file.path);
+      throw new AppError("Yüklenen dosya geçerli bir görsel değil.", {
+        status: 400,
+        code: "invalid_file_content",
+      });
     }
     // Store a relative URL — the DTO layer prefixes the public origin
     // when serializing, and a future move to S3 only changes that one spot.

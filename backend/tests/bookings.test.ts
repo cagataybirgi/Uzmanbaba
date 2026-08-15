@@ -55,7 +55,7 @@ describe("bookings", () => {
       .send({
         professionalId: customer.user.id,
         scheduledAt: futureISO(),
-        address: "x",
+        address: "Test Mah. 1. Sok. No:5",
         description: "yyyyy",
       })
       .expect(400);
@@ -68,7 +68,7 @@ describe("bookings", () => {
       .send({
         professionalId: "00000000-0000-0000-0000-000000000000",
         scheduledAt: futureISO(),
-        address: "x",
+        address: "Test Mah. 1. Sok. No:5",
         description: "yyyyy",
       })
       .expect(401);
@@ -82,7 +82,7 @@ describe("bookings", () => {
       .send({
         professionalId: professional.user.id,
         scheduledAt: futureISO(),
-        address: "x",
+        address: "Test Mah. 1. Sok. No:5",
         description: "Lavabo akmıyor.",
       })
       .expect(201);
@@ -105,7 +105,7 @@ describe("bookings", () => {
       .send({
         professionalId: professional.user.id,
         scheduledAt: futureISO(),
-        address: "x",
+        address: "Test Mah. 1. Sok. No:5",
         description: "Çamaşır makinesi kurulumu.",
       })
       .expect(201);
@@ -174,7 +174,7 @@ describe("bookings", () => {
       .send({
         professionalId: professional.user.id,
         scheduledAt: futureISO(),
-        address: "x",
+        address: "Test Mah. 1. Sok. No:5",
         description: "Klima bakımı.",
       })
       .expect(201);
@@ -199,7 +199,7 @@ describe("bookings", () => {
       .send({
         professionalId: professional.user.id,
         scheduledAt: futureISO(),
-        address: "x",
+        address: "Test Mah. 1. Sok. No:5",
         description: "Boya badana.",
       })
       .expect(201);
@@ -217,5 +217,65 @@ describe("bookings", () => {
       .set("Authorization", `Bearer ${customer.token}`)
       .expect(200);
     expect(cust.body.total).toBe(0);
+  });
+
+  it("concurrent completes don't double-count (race guard)", async () => {
+    const { customer, professional } = await setup();
+    const created = await request(app)
+      .post("/api/bookings")
+      .set("Authorization", `Bearer ${customer.token}`)
+      .send({
+        professionalId: professional.user.id,
+        scheduledAt: futureISO(),
+        address: "Test Mah. 1. Sok. No:5",
+        description: "Aynı anda iki kez tamamlanmasın.",
+      })
+      .expect(201);
+    const bookingId = created.body.item.id;
+
+    // Fire two completes in parallel. Both may pass the read-check, but the
+    // atomic status-guarded update means only one applies the counter bump.
+    await Promise.all([
+      request(app)
+        .patch(`/api/bookings/${bookingId}/complete`)
+        .set("Authorization", `Bearer ${professional.token}`),
+      request(app)
+        .patch(`/api/bookings/${bookingId}/complete`)
+        .set("Authorization", `Bearer ${professional.token}`),
+    ]);
+
+    const cust = await prisma.user.findUnique({ where: { id: customer.user.id } });
+    const pro = await prisma.user.findUnique({ where: { id: professional.user.id } });
+    // Counters land exactly once — not 2 / -1.
+    expect(cust?.completedJobs).toBe(1);
+    expect(cust?.pendingJobs).toBe(0);
+    expect(pro?.completedJobs).toBe(1);
+  });
+
+  it("concurrent cancels decrement pendingJobs only once", async () => {
+    const { customer, professional } = await setup();
+    const created = await request(app)
+      .post("/api/bookings")
+      .set("Authorization", `Bearer ${customer.token}`)
+      .send({
+        professionalId: professional.user.id,
+        scheduledAt: futureISO(),
+        address: "Test Mah. 1. Sok. No:5",
+        description: "Aynı anda iki kez iptal edilmesin.",
+      })
+      .expect(201);
+    const bookingId = created.body.item.id;
+
+    await Promise.all([
+      request(app)
+        .patch(`/api/bookings/${bookingId}/cancel`)
+        .set("Authorization", `Bearer ${customer.token}`),
+      request(app)
+        .patch(`/api/bookings/${bookingId}/cancel`)
+        .set("Authorization", `Bearer ${customer.token}`),
+    ]);
+
+    const cust = await prisma.user.findUnique({ where: { id: customer.user.id } });
+    expect(cust?.pendingJobs).toBe(0); // not -1
   });
 });

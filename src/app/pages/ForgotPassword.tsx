@@ -1,7 +1,8 @@
-import { useState, useEffect, useId } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Mail, ArrowRight, CheckCircle, AlertCircle, ArrowLeft, ShieldCheck } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { api, ApiError } from "../lib/api";
+import { Alert, Button, ButtonLink, Field, Input, Kicker } from "../components/ds";
 
 const RESEND_SECONDS = 60;
 
@@ -13,9 +14,6 @@ export function ForgotPassword() {
   const [countdown, setCountdown] = useState(0);
   const [resending, setResending] = useState(false);
   const navigate = useNavigate();
-
-  const emailId = useId();
-  const errorId = `${emailId}-error`;
 
   // Resend countdown timer (only runs after first successful submit)
   useEffect(() => {
@@ -54,8 +52,7 @@ export function ForgotPassword() {
       setSubmitted(true);
       setCountdown(RESEND_SECONDS);
     } catch (e: unknown) {
-      const message =
-        e instanceof ApiError ? e.message : "İstek gönderilemedi.";
+      const message = e instanceof ApiError ? e.message : "İstek gönderilemedi.";
       setError(message);
     } finally {
       setLoading(false);
@@ -80,195 +77,94 @@ export function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-64px)] flex">
-      {/* Left — Form */}
-      <div className="flex-1 flex items-center justify-center px-6 py-12 bg-white">
-        <div className="w-full max-w-sm flex flex-col gap-6 animate-fade-in-up">
-          {/* Back to login */}
-          <Link
-            to="/login"
-            className="inline-flex items-center gap-1 text-gray-500 hover:text-orange-500 text-sm font-medium w-fit transition-colors"
-          >
-            <ArrowLeft size={14} />
-            Girişe Dön
-          </Link>
+    <div className="mx-auto w-full max-w-[560px] px-6 py-14 md:py-24">
+      <ButtonLink to="/login" variant="ghost" className="mb-7 -ml-4">
+        <ArrowLeft size={15} aria-hidden="true" />
+        Girişe Dön
+      </ButtonLink>
 
-          {!submitted ? (
-            <>
-              <div className="flex flex-col gap-1">
-                <h1 className="text-gray-900 text-2xl font-extrabold">
-                  Şifreni mi Unuttun?
-                </h1>
-                <p className="text-gray-500 text-sm">
-                  E-posta adresini gir, sana sıfırlama bağlantısı gönderelim.
-                </p>
-              </div>
+      <Kicker className="mb-3.5">Şifre sıfırlama</Kicker>
 
-              <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-                {/* Email */}
-                <div className="flex flex-col gap-1.5">
-                  <label
-                    htmlFor={emailId}
-                    className="text-sm font-medium text-gray-700"
-                  >
-                    E-posta
-                  </label>
-                  <div className="relative">
-                    <Mail
-                      size={16}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-10"
-                      aria-hidden="true"
-                    />
-                    <input
-                      id={emailId}
-                      type="email"
-                      value={email}
-                      onChange={(e) => {
-                        setEmail(e.target.value);
-                        if (error) setError("");
-                      }}
-                      placeholder="ornek@email.com"
-                      autoComplete="email"
-                      required
-                      aria-required="true"
-                      aria-invalid={Boolean(error)}
-                      aria-describedby={error ? errorId : undefined}
-                      className={`w-full border rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 transition-all ${
-                        error
-                          ? "border-red-400 bg-red-50 focus:ring-red-200"
-                          : "border-gray-300 focus:ring-orange-300 focus:border-orange-400"
-                      }`}
-                    />
-                  </div>
-                  {error && (
-                    <p
-                      id={errorId}
-                      className="text-red-500 text-xs flex items-center gap-1 animate-slide-down"
-                    >
-                      <AlertCircle size={12} />
-                      {error}
-                    </p>
-                  )}
-                </div>
+      {!submitted ? (
+        <>
+          <h1 className="t-title">Şifremi unuttum.</h1>
+          <p className="t-lead mt-3.5">
+            E-posta adresini gir, sıfırlama bağlantısını gönderelim.
+          </p>
 
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 active:scale-[0.98] disabled:bg-orange-300 text-white font-semibold py-3 rounded-xl text-sm transition-all"
-                >
-                  {loading ? (
-                    <>
-                      <svg
-                        className="animate-spin h-4 w-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        aria-hidden="true"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                        />
-                      </svg>
-                      <span>Gönderiliyor...</span>
-                    </>
-                  ) : (
-                    <>
-                      Sıfırlama Bağlantısı Gönder <ArrowRight size={15} />
-                    </>
-                  )}
-                </button>
-              </form>
-            </>
-          ) : (
-            /* Success state */
-            <div className="flex flex-col items-center gap-4 text-center animate-fade-in-up">
-              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
-                <CheckCircle size={32} className="text-green-500" />
-              </div>
-              <h1 className="text-gray-900 text-2xl font-extrabold">
-                E-posta Gönderildi
-              </h1>
-              <p className="text-gray-500 text-sm max-w-xs">
-                <span className="font-semibold text-gray-700">{maskedEmail}</span>{" "}
-                adresine bir sıfırlama bağlantısı gönderdik. Gelen kutunu kontrol
-                et.
-              </p>
+          <form onSubmit={handleSubmit} noValidate className="mt-10 flex flex-col gap-6">
+            <Field label="E-posta" required error={error || undefined}>
+              {(field) => (
+                <Input
+                  {...field}
+                  type="email"
+                  value={email}
+                  autoComplete="email"
+                  placeholder="ornek@email.com"
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (error) setError("");
+                  }}
+                  required
+                />
+              )}
+            </Field>
 
-              <div className="bg-orange-50 border border-orange-100 rounded-xl px-4 py-3 text-xs text-gray-600 w-full">
-                E-postayı bulamıyorsan spam klasörünü kontrol etmeyi unutma.
-              </div>
-
-              <button
-                type="button"
-                onClick={handleResend}
-                disabled={countdown > 0 || resending}
-                className="text-orange-500 hover:text-orange-600 disabled:text-gray-400 disabled:cursor-not-allowed text-sm font-semibold flex items-center gap-1 transition-colors"
-              >
-                {resending
-                  ? "Tekrar gönderiliyor..."
-                  : countdown > 0
-                  ? `Tekrar gönder (${countdown}s)`
-                  : "E-postayı tekrar gönder"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => navigate("/login")}
-                className="mt-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 px-6 rounded-xl text-sm transition-colors w-full"
-              >
-                Girişe Dön
-              </button>
-            </div>
-          )}
-
-          <p className="text-center text-sm text-gray-500">
-            Hesabın yok mu?{" "}
-            <Link
-              to="/register"
-              className="text-orange-500 hover:text-orange-600 font-semibold"
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              block
+              loading={loading}
+              loadingLabel="Gönderiliyor…"
             >
-              Üye Ol
-            </Link>
+              Bağlantı Gönder
+            </Button>
+          </form>
+        </>
+      ) : (
+        <>
+          <h1 className="t-title">E-posta gönderildi.</h1>
+          <p className="t-lead mt-3.5 max-w-[48ch]">
+            <span className="font-semibold">{maskedEmail}</span> adresine bir
+            sıfırlama bağlantısı gönderdik. Gelen kutunu kontrol et.
           </p>
-        </div>
-      </div>
 
-      {/* Right — Visual Panel (matches Login layout) */}
-      <div className="hidden lg:flex flex-col justify-between w-[480px] bg-orange-500 px-12 py-14 text-white relative overflow-hidden">
-        <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-orange-400 opacity-40" />
-        <div className="absolute bottom-10 -left-10 w-56 h-56 rounded-full bg-orange-600 opacity-30" />
-        <div className="relative z-10">
-          <div className="bg-white/20 backdrop-blur rounded-xl px-4 py-2 inline-block mb-8">
-            <span className="font-extrabold text-lg tracking-tight">
-              Uzman<span className="text-orange-200">Baba</span>
-            </span>
+          <Alert tone="info" className="mt-7">
+            E-postayı bulamıyorsan spam klasörünü kontrol etmeyi unutma.
+          </Alert>
+
+          <div className="mt-10 flex flex-wrap gap-3">
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={() => navigate("/login")}
+            >
+              Girişe Dön
+            </Button>
+            <Button
+              variant="secondary"
+              size="lg"
+              onClick={handleResend}
+              disabled={countdown > 0}
+              loading={resending}
+              loadingLabel="Gönderiliyor…"
+            >
+              {countdown > 0 ? `Tekrar Gönder (${countdown}s)` : "Tekrar Gönder"}
+            </Button>
           </div>
-          <h2 className="text-3xl font-extrabold leading-snug mb-4">
-            Güvenliğin önemli.
-          </h2>
-          <p className="text-orange-100 text-sm leading-relaxed">
-            Hesabını güvende tutmak için sıfırlama bağlantısı yalnızca senin
-            e-posta adresine gönderilir.
-          </p>
-        </div>
-        <div className="relative z-10 bg-white/15 backdrop-blur rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <ShieldCheck size={28} className="text-orange-100" />
-            <p className="text-xs text-white/90 leading-relaxed">
-              Şifre değişikliklerinden anında haberdar olursun.
-            </p>
-          </div>
-        </div>
-      </div>
+        </>
+      )}
+
+      <p className="t-lead mt-7">
+        Hesabın yok mu?{" "}
+        <Link
+          to="/register"
+          className="font-semibold text-brand-800 underline underline-offset-4 hover:text-brand-700"
+        >
+          Üye Ol
+        </Link>
+      </p>
     </div>
   );
 }

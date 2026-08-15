@@ -1,20 +1,22 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router";
-import {
-  Star,
-  MapPin,
-  CheckCircle,
-  ArrowLeft,
-  Calendar,
-  Briefcase,
-  ShieldCheck,
-  AlertCircle,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { useParams } from "react-router";
+import { ArrowLeft, ChevronLeft, ChevronRight, Star } from "lucide-react";
 import { useProfessional } from "../data/professionals";
 import { useProfessionalReviews } from "../data/reviews";
 import { BookingModal } from "../components/BookingModal";
+import {
+  Button,
+  ButtonLink,
+  ErrorState,
+  FeatureBlock,
+  Kicker,
+  Photo,
+  Shell,
+  Skeleton,
+  Table,
+  Tag,
+  Td,
+} from "../components/ds";
 
 const REVIEWS_PER_PAGE = 5;
 
@@ -23,6 +25,7 @@ const TR_MONTHS_SHORT = [
   "Oca", "Şub", "Mar", "Nis", "May", "Haz",
   "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara",
 ];
+
 function formatReviewDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
@@ -31,12 +34,17 @@ function formatReviewDate(iso: string): string {
 
 function Stars({ rating }: { rating: number }) {
   return (
-    <div className="flex items-center gap-0.5">
+    <div
+      className="flex items-center gap-0.5 text-brand"
+      role="img"
+      aria-label={`5 üzerinden ${rating} puan`}
+    >
       {[1, 2, 3, 4, 5].map((n) => (
         <Star
           key={n}
-          size={14}
-          className={n <= rating ? "fill-orange-500 text-orange-500" : "text-gray-300"}
+          size={15}
+          aria-hidden="true"
+          className={n <= rating ? "fill-brand" : "text-ink/25"}
         />
       ))}
     </div>
@@ -50,242 +58,223 @@ export function ProfessionalDetail() {
   const reviews = useProfessionalReviews(id, page, REVIEWS_PER_PAGE);
   const [modalOpen, setModalOpen] = useState(false);
 
-  /* ── Loading / error states (full-page) ──────────────────────────────── */
+  /* ── Loading (full page) ─────────────────────────────────────────────── */
 
   if (pro.loading && !pro.data) {
     return (
-      <div className="max-w-5xl mx-auto px-4 py-12 animate-pulse">
-        <div className="h-48 bg-gray-100 rounded-2xl mb-6" />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 h-64 bg-gray-100 rounded-2xl" />
-          <div className="h-64 bg-gray-100 rounded-2xl" />
+      <Shell className="py-14 md:py-16" aria-busy="true">
+        <span className="sr-only">Uzman profili yükleniyor…</span>
+        <div className="flex flex-col gap-7 border-y-2 border-rule py-10 sm:flex-row">
+          <Skeleton className="h-[150px] w-[120px] shrink-0" />
+          <div className="flex flex-1 flex-col gap-4">
+            <Skeleton className="h-12 w-3/5" />
+            <Skeleton className="h-5 w-2/5" />
+            <Skeleton className="h-4 w-1/3" />
+          </div>
         </div>
-      </div>
+        <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <Skeleton className="h-56" />
+          <Skeleton className="h-40" />
+        </div>
+      </Shell>
     );
   }
 
+  /* ── Error / not found ───────────────────────────────────────────────── */
+
   if (pro.error || !pro.data) {
     return (
-      <div className="max-w-md mx-auto px-4 py-20 flex flex-col items-center text-center gap-4">
-        <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center">
-          <AlertCircle size={28} className="text-red-500" />
+      <Shell className="py-16 md:py-20">
+        <ErrorState
+          title="Uzman bulunamadı"
+          message={
+            pro.error ??
+            "Aradığınız uzman mevcut değil ya da kaldırılmış olabilir."
+          }
+        />
+        <div className="mt-7">
+          <ButtonLink to="/search" variant="primary">
+            Aramaya dön
+          </ButtonLink>
         </div>
-        <h1 className="text-gray-900 text-2xl font-extrabold">Uzman bulunamadı</h1>
-        <p className="text-gray-500 text-sm">
-          {pro.error ?? "Aradığınız uzman mevcut değil ya da kaldırılmış olabilir."}
-        </p>
-        <Link
-          to="/search"
-          className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition-colors"
-        >
-          Aramaya dön
-        </Link>
-      </div>
+      </Shell>
     );
   }
 
   const p = pro.data;
+  const reviewItems = reviews.data?.items ?? [];
 
   return (
     <>
-      <div className="max-w-5xl mx-auto px-4 py-8 sm:py-12 flex flex-col gap-6">
-        {/* Back link */}
-        <Link
-          to="/search"
-          className="inline-flex items-center gap-1 text-gray-500 hover:text-orange-500 text-sm font-medium w-fit transition-colors"
-        >
-          <ArrowLeft size={14} /> Aramaya Dön
-        </Link>
+      <Shell className="py-10 md:py-14">
+        <ButtonLink to="/search" variant="ghost" className="mb-7 -ml-4">
+          <ArrowLeft size={15} aria-hidden="true" />
+          Aramaya Dön
+        </ButtonLink>
 
-        {/* ── Hero ────────────────────────────────────────────────────── */}
-        <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          {/* Banner background — purely decorative */}
-          <div className="h-24 bg-gradient-to-br from-orange-50 to-orange-100" />
-          <div className="px-6 sm:px-8 pb-6 -mt-12 flex flex-col sm:flex-row gap-6 items-start">
-            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden border-4 border-white shadow-md flex-shrink-0 bg-gray-100">
-              <img
-                src={p.avatar}
-                alt={p.name}
-                className="w-full h-full object-cover object-top"
-              />
-            </div>
+        {/* ── Header ──────────────────────────────────────────────────── */}
+        <div className="grid gap-7 border-y-2 border-rule py-10 sm:grid-cols-[120px_minmax(0,1fr)] lg:grid-cols-[120px_minmax(0,1fr)_auto] lg:gap-x-[clamp(24px,4vw,64px)]">
+          <Photo src={p.avatar} name={p.name} alt="" size={120} portrait />
 
-            <div className="flex-1 min-w-0 mt-2 sm:mt-12">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-gray-900 text-2xl font-extrabold">{p.name}</h1>
-                {p.available && (
-                  <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-full">
-                    <CheckCircle size={11} /> Bugün Müsait
-                  </span>
-                )}
-              </div>
-              <p className="text-gray-600 text-sm mt-0.5">{p.title}</p>
-              <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-500">
-                <span className="inline-flex items-center gap-1">
-                  <MapPin size={13} /> {p.location}
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <Star size={13} className="fill-orange-500 text-orange-500" />
-                  <span className="font-semibold text-gray-700">
-                    {p.rating ? p.rating.toFixed(1) : "—"}
-                  </span>
-                  <span className="text-gray-400">
-                    ({p.reviews} değerlendirme)
-                  </span>
-                </span>
-              </div>
-            </div>
-
-            <div className="sm:mt-12 w-full sm:w-auto">
-              <button
-                onClick={() => setModalOpen(true)}
-                className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600 active:scale-[0.98] text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition-all whitespace-nowrap"
-              >
-                Hemen Rezerve Et
-              </button>
+          <div>
+            <h1 className="font-display text-[clamp(32px,4vw,52px)] leading-[1.06] font-extrabold tracking-[-0.02em] -ml-[0.058em]">
+              {p.name}
+            </h1>
+            <p className="t-lead mt-3.5">{p.title}</p>
+            <div className="mt-3.5 flex flex-wrap items-center gap-x-6 gap-y-2 text-[13px] tracking-[0.08em] text-ink/70 uppercase">
+              <span>{p.location}</span>
+              <span className="tnum">
+                {(p.rating ?? 0).toFixed(1).replace(".", ",")} ({p.reviews})
+              </span>
+              <Tag tone={p.available ? "accent" : "neutral"}>
+                {p.available ? "Bugün Müsait" : "Dolu"}
+              </Tag>
             </div>
           </div>
-        </section>
 
-        {/* ── Body ───────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left column — bio + reviews */}
-          <div className="lg:col-span-2 flex flex-col gap-6">
-            {/* Bio */}
-            <section className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <h2 className="font-bold text-gray-900 mb-3">Hakkında</h2>
-              <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
-                {p.bio?.trim()
-                  ? p.bio
-                  : `${p.name}, ${p.title.toLocaleLowerCase("tr-TR")} alanında hizmet veriyor. Daha fazla bilgi için iletişime geçebilirsiniz.`}
-              </p>
-            </section>
+          <div className="sm:col-span-2 lg:col-span-1 lg:justify-self-end">
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={() => setModalOpen(true)}
+              className="w-full sm:w-auto"
+            >
+              Hemen Rezerve Et
+            </Button>
+          </div>
+        </div>
 
-            {/* Reviews */}
-            <section className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-bold text-gray-900">Değerlendirmeler</h2>
-                <span className="text-gray-400 text-sm">
-                  {reviews.data?.total ?? p.reviews} adet
-                </span>
+        {/* ── Body ────────────────────────────────────────────────────── */}
+        <div className="grid gap-10 pt-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-x-[clamp(24px,5vw,72px)]">
+          <div>
+            <Kicker as="h2" className="mb-3.5">
+              Hakkında
+            </Kicker>
+            <p className="t-body max-w-[58ch] whitespace-pre-line">
+              {p.bio?.trim()
+                ? p.bio
+                : `${p.name}, ${p.title.toLocaleLowerCase("tr-TR")} alanında hizmet veriyor. Daha fazla bilgi için iletişime geçebilirsiniz.`}
+            </p>
+
+            <Kicker as="h2" className="mt-14 mb-3.5">
+              Değerlendirmeler ({reviews.data?.total ?? p.reviews})
+            </Kicker>
+
+            {reviews.loading && !reviews.data && (
+              <div aria-busy="true" className="flex flex-col gap-4 pt-4">
+                <span className="sr-only">Değerlendirmeler yükleniyor…</span>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="border-t-2 border-rule pt-7">
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="mt-3 h-4 w-2/3" />
+                  </div>
+                ))}
               </div>
+            )}
 
-              {reviews.loading && !reviews.data && (
-                <div className="space-y-4">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="animate-pulse flex gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gray-100 flex-shrink-0" />
-                      <div className="flex-1 space-y-2">
-                        <div className="h-3 bg-gray-100 rounded w-1/3" />
-                        <div className="h-3 bg-gray-100 rounded w-2/3" />
-                        <div className="h-3 bg-gray-100 rounded w-1/2" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+            {reviews.error && !reviews.loading && (
+              <ErrorState
+                title="Değerlendirmeler yüklenemedi"
+                message={reviews.error}
+              />
+            )}
 
-              {reviews.error && !reviews.loading && (
-                <p className="text-red-500 text-sm flex items-center gap-2">
-                  <AlertCircle size={14} /> {reviews.error}
-                </p>
-              )}
+            {!reviews.loading && !reviews.error && reviewItems.length === 0 && (
+              <p className="t-body border-t-2 border-rule pt-7">
+                Henüz değerlendirme yapılmamış. Tamamlanan bir rezervasyonun
+                ardından ilk değerlendirmeyi sen yapabilirsin.
+              </p>
+            )}
 
-              {!reviews.loading && !reviews.error && (reviews.data?.items.length ?? 0) === 0 && (
-                <p className="text-gray-400 text-sm">
-                  Henüz değerlendirme yapılmamış. İlk değerlendirmeyi siz yapın!
-                </p>
-              )}
-
-              {!reviews.loading && !reviews.error && (reviews.data?.items ?? []).map((r) => (
-                <article key={r.id} className="flex gap-3 py-4 border-b border-gray-100 last:border-b-0">
-                  <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 bg-gray-100">
-                    <img
-                      src={r.author.avatar}
-                      alt=""
-                      className="w-full h-full object-cover object-top"
-                    />
+            {!reviews.loading &&
+              !reviews.error &&
+              reviewItems.map((r) => (
+                <article key={r.id} className="border-t-2 border-rule py-7">
+                  <div className="flex flex-wrap items-baseline justify-between gap-4">
+                    <p className="font-display text-[15px] font-extrabold">
+                      {r.author.name}
+                    </p>
+                    <p className="tnum text-[13px] text-ink/70">
+                      {formatReviewDate(r.createdAt)}
+                    </p>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-semibold text-gray-900 text-sm">
-                        {r.author.name}
-                      </p>
-                      <Stars rating={r.rating} />
-                      <span className="text-gray-400 text-xs ml-auto">
-                        {formatReviewDate(r.createdAt)}
-                      </span>
-                    </div>
-                    {r.comment && (
-                      <p className="text-gray-600 text-sm mt-2 leading-relaxed whitespace-pre-line">
-                        {r.comment}
-                      </p>
-                    )}
+                  <div className="mt-1.5">
+                    <Stars rating={r.rating} />
                   </div>
+                  {r.comment && (
+                    <p className="t-body mt-3.5 max-w-[52ch] whitespace-pre-line">
+                      {r.comment}
+                    </p>
+                  )}
                 </article>
               ))}
 
-              {/* Pagination — only when there's more than one page */}
-              {reviews.data && reviews.data.totalPages > 1 && (
-                <div className="flex items-center justify-center gap-3 mt-5">
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1 || reviews.loading}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-600 hover:border-orange-400 hover:text-orange-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronLeft size={14} /> Önceki
-                  </button>
-                  <span className="text-sm text-gray-500">
-                    Sayfa {reviews.data.page} / {reviews.data.totalPages}
-                  </span>
-                  <button
-                    onClick={() => setPage((p) => p + 1)}
-                    disabled={page >= reviews.data.totalPages || reviews.loading}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-600 hover:border-orange-400 hover:text-orange-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Sonraki <ChevronRight size={14} />
-                  </button>
-                </div>
-              )}
-            </section>
+            {reviews.data && reviews.data.totalPages > 1 && (
+              <nav
+                aria-label="Değerlendirme sayfaları"
+                className="flex flex-wrap items-center gap-3 border-t-2 border-rule pt-7"
+              >
+                <Button
+                  variant="secondary"
+                  onClick={() => setPage((n) => Math.max(1, n - 1))}
+                  disabled={page === 1 || reviews.loading}
+                >
+                  <ChevronLeft size={16} aria-hidden="true" />
+                  Önceki
+                </Button>
+                <span className="tnum text-[13px] tracking-[0.08em] text-ink/70 uppercase">
+                  Sayfa {reviews.data.page} / {reviews.data.totalPages}
+                </span>
+                <Button
+                  variant="secondary"
+                  onClick={() => setPage((n) => n + 1)}
+                  disabled={page >= reviews.data.totalPages || reviews.loading}
+                >
+                  Sonraki
+                  <ChevronRight size={16} aria-hidden="true" />
+                </Button>
+              </nav>
+            )}
           </div>
 
-          {/* Right column — stats sidebar */}
-          <aside className="flex flex-col gap-4">
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col gap-4">
-              <h3 className="font-bold text-gray-900 text-sm">İstatistikler</h3>
-              <Stat
-                icon={<Briefcase size={16} className="text-orange-500" />}
-                label="Tamamlanan iş"
-                value={p.completedJobs?.toString() ?? "—"}
-              />
-              <Stat
-                icon={<Star size={16} className="text-orange-500" />}
-                label="Ortalama puan"
-                value={p.rating ? `${p.rating.toFixed(1)} / 5` : "—"}
-              />
-              <Stat
-                icon={<Calendar size={16} className="text-orange-500" />}
-                label="Üyelik"
-                value={p.joinDate ?? "—"}
-              />
-            </div>
+          {/* ── Aside ─────────────────────────────────────────────────── */}
+          <aside>
+            <Kicker as="h2" className="mb-3.5">
+              İstatistikler
+            </Kicker>
+            <Table caption={`${p.name} istatistikleri`} stack={false}>
+              <tbody>
+                <tr>
+                  <Td>Tamamlanan iş</Td>
+                  <Td className="tnum text-right font-display font-extrabold">
+                    {p.completedJobs ?? "—"}
+                  </Td>
+                </tr>
+                <tr>
+                  <Td>Ortalama puan</Td>
+                  <Td className="tnum text-right font-display font-extrabold">
+                    {p.rating ? `${p.rating.toFixed(1).replace(".", ",")} / 5` : "—"}
+                  </Td>
+                </tr>
+                <tr>
+                  <Td>Üyelik</Td>
+                  <Td className="text-right font-display font-extrabold">
+                    {p.joinDate ?? "—"}
+                  </Td>
+                </tr>
+              </tbody>
+            </Table>
 
-            <div className="bg-orange-50 border border-orange-100 rounded-2xl p-5 flex gap-3 items-start">
-              <ShieldCheck size={20} className="text-orange-500 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-semibold text-gray-800">
-                  Güvenli Rezervasyon
-                </p>
-                <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                  Tüm uzmanlar kimlik kontrolünden geçer. İş tamamlanmadan ödeme
-                  çıkmaz.
-                </p>
-              </div>
-            </div>
+            <FeatureBlock
+              title="Güvenli Rezervasyon"
+              className="mt-14 border-t-2 border-rule pt-7"
+            >
+              Değerlendirmeler yalnızca tamamlanmış rezervasyonlardan
+              yapılabilir. Bir sorun yaşarsan destek ekibimize ulaşabilirsin.
+            </FeatureBlock>
           </aside>
         </div>
-      </div>
+      </Shell>
 
       <BookingModal
         professional={p}
@@ -293,19 +282,5 @@ export function ProfessionalDetail() {
         onClose={() => setModalOpen(false)}
       />
     </>
-  );
-}
-
-function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs text-gray-400">{label}</p>
-        <p className="text-sm font-semibold text-gray-800 truncate">{value}</p>
-      </div>
-    </div>
   );
 }

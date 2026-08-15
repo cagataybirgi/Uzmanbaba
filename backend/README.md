@@ -30,6 +30,7 @@ All endpoints are mounted under `/api`.
 | POST   | `/api/users/me/avatar`            |  ✔   | Upload a profile picture (multipart)     |
 | GET    | `/api/professionals`              |  —   | List/search/sort/paginate professionals  |
 | GET    | `/api/professionals/featured`     |  —   | Top professionals for the Home page      |
+| GET    | `/api/professionals/stats`        |  —   | Factual public platform statistics       |
 | GET    | `/api/professionals/:id`          |  —   | Professional detail                      |
 | POST   | `/api/bookings`                   |  ✔   | Create a booking for the current user    |
 | GET    | `/api/bookings/me`                |  ✔   | Current user's bookings as a customer    |

@@ -1,7 +1,7 @@
 import type { User } from "@prisma/client";
 import { prisma } from "../../prisma.js";
 import { AppError } from "../../errors.js";
-import { hashPassword, verifyPassword } from "../../utils/password.js";
+import { hashPassword, verifyPassword, DUMMY_PASSWORD_HASH } from "../../utils/password.js";
 import { signAccessToken } from "../../utils/jwt.js";
 import {
   generateNumericCode,
@@ -29,7 +29,11 @@ interface AuthResponse {
 
 function authResponse(user: User): AuthResponse {
   return {
-    token: signAccessToken({ sub: user.id, email: user.email }),
+    token: signAccessToken({
+      sub: user.id,
+      email: user.email,
+      ver: user.tokenVersion,
+    }),
     user: toUserDto(user),
   };
 }
@@ -68,9 +72,18 @@ export async function register(input: RegisterInput): Promise<AuthResponse> {
 
 export async function login(input: LoginInput): Promise<AuthResponse> {
   const user = await prisma.user.findUnique({ where: { email: input.email } });
-  // Same error message + timing whether the email exists or the password is
-  // wrong, so the endpoint can't be used to enumerate registered emails.
-  if (!user || !(await verifyPassword(input.password, user.passwordHash))) {
+
+  // Timing equalization: when the email doesn't exist we still run a bcrypt
+  // compare against a fixed dummy hash, so the response takes the same ~250ms
+  // as a real check. Combined with the identical error body, this closes the
+  // enumeration channel (fast reject on unknown email would otherwise reveal
+  // which addresses are registered).
+  const passwordOk = await verifyPassword(
+    input.password,
+    user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+  );
+
+  if (!user || !passwordOk) {
     throw new AppError("E-posta veya şifre hatalı.", {
       status: 401,
       code: "invalid_credentials",
@@ -202,7 +215,10 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
   await prisma.$transaction([
     prisma.user.update({
       where: { id: row.userId },
-      data: { passwordHash },
+      // tokenVersion bump revokes every session issued before the reset —
+      // if the reset was triggered because of a compromised account, the
+      // attacker's live JWTs die here too.
+      data: { passwordHash, tokenVersion: { increment: 1 } },
     }),
     prisma.passwordReset.update({
       where: { id: row.id },

@@ -5,6 +5,7 @@ import {
   toProfessionalDto,
   type ListProfessionalsResponse,
   type ProfessionalDto,
+  type ProfessionalStatsDto,
 } from "./professionals.dto.js";
 import type { ListProfessionalsQuery } from "./professionals.schemas.js";
 
@@ -50,6 +51,49 @@ export async function listFeatured(limit = 3): Promise<ProfessionalDto[]> {
     take: limit,
   });
   return rows.map(toProfessionalDto);
+}
+
+/* ─── public platform stats ─────────────────────────────────────────────── */
+
+export async function getProfessionalStats(): Promise<ProfessionalStatsDto> {
+  const where: Prisma.UserWhereInput = {
+    accountType: "professional",
+    emailVerified: true,
+  };
+
+  const [emailVerifiedProfessionals, locations, aggregate] = await Promise.all([
+    prisma.user.count({ where }),
+    prisma.user.findMany({
+      where: { ...where, location: { not: "" } },
+      select: { location: true },
+      distinct: ["location"],
+    }),
+    prisma.user.aggregate({
+      where,
+      _avg: { rating: true },
+      _sum: { completedJobs: true },
+    }),
+  ]);
+
+  // Locations are stored as "Ankara, TR". Normalizing the city prefix also
+  // avoids double-counting legacy rows that may contain only "Ankara".
+  const cities = new Set(
+    locations
+      .map(({ location }) => location.split(",")[0]?.trim())
+      .filter((city): city is string => Boolean(city))
+      .map((city) => city.toLocaleLowerCase("tr-TR"))
+      .filter((city) => city !== "türkiye"),
+  );
+
+  return {
+    emailVerifiedProfessionals,
+    citiesServed: cities.size,
+    averageRating:
+      aggregate._avg.rating === null
+        ? null
+        : Number(aggregate._avg.rating.toFixed(2)),
+    completedJobs: aggregate._sum.completedJobs ?? 0,
+  };
 }
 
 /* ─── detail ──────────────────────────────────────────────────────────────── */

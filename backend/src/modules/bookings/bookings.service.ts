@@ -154,22 +154,23 @@ export async function cancelBooking(
   }
 
   const updated = await prisma.$transaction(async (tx) => {
-    const next = await tx.booking.update({
-      where: { id: bookingId },
+    // Atomic guard: the status predicate is part of the WHERE, so of two
+    // concurrent transitions only one gets count === 1. Without it, both
+    // could pass the read-check above and each decrement pendingJobs.
+    const res = await tx.booking.updateMany({
+      where: { id: bookingId, status: { in: ["pending", "confirmed"] } },
       data: { status: "cancelled" },
-      include: BOOKING_INCLUDE,
     });
-
-    if (booking.status === "pending" || booking.status === "confirmed") {
+    if (res.count === 1) {
       await tx.user.update({
         where: { id: booking.customerId },
         data: { pendingJobs: { decrement: 1 } },
       });
     }
-    return next;
+    return tx.booking.findUnique({ where: { id: bookingId }, include: BOOKING_INCLUDE });
   });
 
-  return toBookingDto(updated);
+  return toBookingDto(updated!);
 }
 
 /* ─── confirm (professional only) ─────────────────────────────────────────── */
@@ -193,12 +194,16 @@ export async function confirmBooking(
     throw AppError.badRequest("Yalnızca bekleyen rezervasyonlar onaylanabilir.");
   }
 
-  const updated = await prisma.booking.update({
-    where: { id: bookingId },
+  // Guarded transition — a concurrent confirm/cancel can't both win.
+  await prisma.booking.updateMany({
+    where: { id: bookingId, status: "pending" },
     data: { status: "confirmed" },
+  });
+  const updated = await prisma.booking.findUnique({
+    where: { id: bookingId },
     include: BOOKING_INCLUDE,
   });
-  return toBookingDto(updated);
+  return toBookingDto(updated!);
 }
 
 /* ─── complete (professional only) ────────────────────────────────────────── */
@@ -229,26 +234,29 @@ export async function completeBooking(
   // Done in the same transaction as the status flip so the counters can't
   // diverge from the booking row.
   const updated = await prisma.$transaction(async (tx) => {
-    const next = await tx.booking.update({
-      where: { id: bookingId },
+    // Atomic guard so two concurrent completes can't both bump the counters
+    // (which would push completedJobs to 2 and pendingJobs to -1).
+    const res = await tx.booking.updateMany({
+      where: { id: bookingId, status: { in: ["pending", "confirmed"] } },
       data: { status: "completed" },
-      include: BOOKING_INCLUDE,
     });
 
-    await tx.user.update({
-      where: { id: booking.customerId },
-      data: {
-        pendingJobs: { decrement: 1 },
-        completedJobs: { increment: 1 },
-      },
-    });
-    await tx.user.update({
-      where: { id: booking.professionalId },
-      data: { completedJobs: { increment: 1 } },
-    });
+    if (res.count === 1) {
+      await tx.user.update({
+        where: { id: booking.customerId },
+        data: {
+          pendingJobs: { decrement: 1 },
+          completedJobs: { increment: 1 },
+        },
+      });
+      await tx.user.update({
+        where: { id: booking.professionalId },
+        data: { completedJobs: { increment: 1 } },
+      });
+    }
 
-    return next;
+    return tx.booking.findUnique({ where: { id: bookingId }, include: BOOKING_INCLUDE });
   });
 
-  return toBookingDto(updated);
+  return toBookingDto(updated!);
 }

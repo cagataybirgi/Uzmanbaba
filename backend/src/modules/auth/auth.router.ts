@@ -98,13 +98,15 @@ authRouter.post(
 );
 
 // ── POST /auth/change-password ──────────────────────────────────────────────
+// Returns a fresh token: the version bump revokes all prior JWTs including
+// the one used for this request, so the client must swap to the new one.
 authRouter.post(
   "/change-password",
   requireAuth,
   asyncHandler(async (req, res) => {
     const input = changePasswordSchema.parse(req.body);
-    await changePasswordService(req.auth!.sub, input);
-    res.status(200).json({ ok: true });
+    const { token } = await changePasswordService(req.auth!.sub, input);
+    res.status(200).json({ ok: true, token });
   }),
 );
 

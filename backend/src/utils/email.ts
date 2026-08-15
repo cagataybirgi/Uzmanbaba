@@ -1,6 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { config } from "../config.js";
-import { logger } from "../logger.js";
 
 /**
  * Email sender.
@@ -37,11 +36,18 @@ interface SendArgs {
 export async function sendEmail({ to, subject, text, html }: SendArgs): Promise<void> {
   const t = getTransporter();
   if (!t) {
-    logger.info("[email:dev] (no SMTP configured — printing instead)", {
-      to,
-      subject,
-      text,
-    });
+    // Dev fallback: print a readable block (not JSON-escaped) so the
+    // verification code / reset link is easy to copy out of the terminal.
+    const divider = "─".repeat(64);
+    console.log(
+      `\n${divider}\n` +
+        `📧  DEV EMAIL (no SMTP configured — not actually sent)\n` +
+        `    To:      ${to}\n` +
+        `    Subject: ${subject}\n` +
+        `${divider}\n` +
+        `${text}\n` +
+        `${divider}\n`,
+    );
     return;
   }
   await t.sendMail({

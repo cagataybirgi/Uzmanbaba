@@ -45,9 +45,9 @@ async function seedPros() {
   ]);
 
   // Give them distinct ratings so the "rating" sort is meaningful.
-  await prisma.user.update({ where: { id: ahmet.user.id },  data: { rating: 4.9, reviewsCount: 200 } });
-  await prisma.user.update({ where: { id: elif.user.id },   data: { rating: 4.7, reviewsCount: 150 } });
-  await prisma.user.update({ where: { id: mehmet.user.id }, data: { rating: 4.5, reviewsCount: 100, available: false } });
+  await prisma.user.update({ where: { id: ahmet.user.id },  data: { rating: 4.9, reviewsCount: 200, completedJobs: 12 } });
+  await prisma.user.update({ where: { id: elif.user.id },   data: { rating: 4.7, reviewsCount: 150, completedJobs: 7 } });
+  await prisma.user.update({ where: { id: mehmet.user.id }, data: { rating: 4.5, reviewsCount: 100, completedJobs: 3, available: false } });
 
   return { ahmet, elif, mehmet, customer };
 }
@@ -104,6 +104,18 @@ describe("professionals", () => {
       .expect(200);
     expect(res.body.items.length).toBe(2);
     expect(res.body.items[0].rating).toBeGreaterThanOrEqual(res.body.items[1].rating);
+  });
+
+  it("returns factual public platform statistics", async () => {
+    await seedPros();
+    const res = await request(app)
+      .get("/api/professionals/stats")
+      .expect(200);
+
+    expect(res.body.stats.emailVerifiedProfessionals).toBe(3);
+    expect(res.body.stats.citiesServed).toBe(3);
+    expect(res.body.stats.averageRating).toBeCloseTo(4.7, 5);
+    expect(res.body.stats.completedJobs).toBe(22);
   });
 
   it("detail endpoint returns the professional with detail fields", async () => {
