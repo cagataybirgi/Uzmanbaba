@@ -40,6 +40,11 @@ All endpoints are mounted under `/api`.
 | PATCH  | `/api/bookings/:id/complete`      |  ✔   | Pro marks a booking complete             |
 | POST   | `/api/reviews`                    |  ✔   | Review a completed booking (1–5 + comment)|
 | GET    | `/api/professionals/:id/reviews`  |  —   | Public list of a pro's reviews           |
+| GET    | `/api/admin/summary`              | admin| Counts for the admin panel header        |
+| GET    | `/api/admin/users`                | admin| Users (`q`, `accountType`, paginated)    |
+| GET    | `/api/admin/bookings`             | admin| Bookings (`q`, `status`, paginated)      |
+| GET    | `/api/admin/payments`             | admin| Payments (`status`, `attention=true`)    |
+| POST   | `/api/admin/payments/:id/resolve` | admin| Settle a stuck/failed refund             |
 | GET    | `/health`                         |  —   | Liveness check                           |
 
 ### Reviews — request shapes
@@ -297,11 +302,46 @@ live). With the keys unset the API boots normally and checkout answers 503.
 `PUBLIC_BASE_URL` must be reachable from the customer's browser — it's where
 the callback lands.
 
-**Not yet done.** Refunds: cancelling a paid booking logs a warning and the
-refund must be issued from the iyzico panel. The buyer's `identityNumber`
-is sent as iyzico's documented placeholder since we don't collect TCKN.
-Split payouts to professionals (iyzico sub-merchants) are a separate piece of
-work; today the platform account collects everything.
+**Refunds.** Cancelling a paid booking refunds it automatically, in full
+(`PaymentRefunder` in `payments.refunds.ts`). When iyzico refuses, or the call
+breaks mid-flight, the payment shows up in the admin panel's "Müdahale
+gerekli" list — see below.
+
+**Not yet done.** The buyer's `identityNumber` is sent as iyzico's documented
+placeholder since we don't collect TCKN. Split payouts to professionals
+(iyzico sub-merchants) are a separate piece of work; today the platform
+account collects everything.
+
+## Admin panel
+
+Staff-only pages at `/yonetim` on the frontend, backed by `/api/admin/*`.
+Every admin route runs `requireAuth` + `requireAdmin`, and `requireAdmin`
+reads `User.isAdmin` from the database on each request, so revoking is
+immediate.
+
+There is deliberately no API for making someone admin. Register the account
+on the site, then from `backend/`:
+
+```bash
+npm run admin:grant -- you@example.com            # grant
+npm run admin:grant -- you@example.com --revoke   # revoke
+```
+
+It acts on whatever `DATABASE_URL` in `.env` points at.
+
+**Resolving payments.** A payment needs attention when it is stuck in
+`refunding` (refund result unknown) or `succeeded` on a cancelled booking
+(iyzico refused the refund). Look the payment up in the iyzico panel by its
+payment id, then in the admin panel choose:
+
+- **İade edildi olarak işaretle** (`mark_refunded`) — the panel shows the
+  money went back. Records it; calls nothing.
+- **İadeyi tekrar dene** (`retry_refund`) — the panel shows no refund. Puts
+  the row back to `succeeded` and runs the refunder again.
+
+A `refunding` row younger than 5 minutes can't be resolved (it may still be
+in flight). Every decision is appended to `Payment.rawResult.adminActions`
+with the admin's id, time and optional note.
 
 ## Wiring the frontend
 

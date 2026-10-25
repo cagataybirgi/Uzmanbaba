@@ -6,6 +6,7 @@ import {
   LogOut,
   Menu,
   Settings,
+  ShieldCheck,
   User,
   X,
 } from "lucide-react";
@@ -33,6 +34,9 @@ const ACCOUNT_LINKS = [
   { label: "Ayarlar", to: "/dashboard?tab=settings", icon: Settings },
 ] as const;
 
+/** Shown to platform staff only, after the regular account links. */
+const ADMIN_LINK = { label: "Yönetim", to: "/yonetim", icon: ShieldCheck } as const;
+
 export function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -40,6 +44,7 @@ export function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuth();
+  const accountLinks = user?.isAdmin ? [...ACCOUNT_LINKS, ADMIN_LINK] : ACCOUNT_LINKS;
 
   const isActive = (to: string) => location.pathname === to.split("#")[0];
 
@@ -156,7 +161,7 @@ export function Navbar() {
                     <p className="truncate text-xs text-ink/60">{user.email}</p>
                   </div>
 
-                  {ACCOUNT_LINKS.map(({ label, to, icon: Icon }) => (
+                  {accountLinks.map(({ label, to, icon: Icon }) => (
                     <Link
                       key={label}
                       to={to}
@@ -239,7 +244,7 @@ export function Navbar() {
                     <p className="truncate text-xs text-ink/60">{user.email}</p>
                   </div>
                 </div>
-                {ACCOUNT_LINKS.map(({ label, to, icon: Icon }) => (
+                {accountLinks.map(({ label, to, icon: Icon }) => (
                   <Link
                     key={label}
                     to={to}

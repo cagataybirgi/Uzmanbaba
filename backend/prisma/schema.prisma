@@ -59,6 +59,10 @@ model User {
   tokenVersion  Int         @default(0)
   accountType   AccountType @default(customer)
   emailVerified Boolean     @default(false)
+  // Platform staff. Separate from accountType because an admin can still be
+  // a customer or a professional. Granted only from the command line
+  // (npm run admin:grant) — no API endpoint can set it.
+  isAdmin       Boolean     @default(false)
 
   avatar    String  @default("")
   location  String  @default("")

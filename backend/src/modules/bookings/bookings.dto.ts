@@ -65,7 +65,7 @@ export const BOOKING_PAYMENTS_INCLUDE = {
   select: { status: true },
 } as const;
 
-function refundState(payments: Array<{ status: PaymentStatus }> = []): BookingDto["refund"] {
+export function refundState(payments: Array<{ status: PaymentStatus }> = []): BookingDto["refund"] {
   if (payments.some((p) => p.status === "succeeded")) return null;
   if (payments.some((p) => p.status === "refunding")) return "pending";
   if (payments.some((p) => p.status === "refunded")) return "done";

@@ -19,6 +19,8 @@ export interface UserDto {
   phone: string;
   accountType: "customer" | "professional";
   emailVerified: boolean;
+  /** Only ever true for platform staff. The frontend uses it to show the admin link. */
+  isAdmin: boolean;
   avatar: string;
   location: string;
   specialty?: string;
@@ -62,6 +64,7 @@ export function toUserDto(user: User): UserDto {
     phone: user.phone,
     accountType: user.accountType,
     emailVerified: user.emailVerified,
+    isAdmin: user.isAdmin,
     avatar: publicAvatar(user.avatar),
     location: user.location || "Türkiye",
     specialty: user.specialty ?? undefined,

@@ -137,6 +137,18 @@ export const routes: RouteObject[] = [
         ],
       },
 
+      // Protected: staff panel. The page itself shows a 404 to non-admins.
+      {
+        path: "yonetim",
+        Component: ProtectedRoute,
+        children: [
+          {
+            index: true,
+            lazy: lazyPage(() => import("./pages/Admin"), (module) => module.Admin),
+          },
+        ],
+      },
+
       // Protected: iyzico sends the customer back here after checkout
       {
         path: "odeme",

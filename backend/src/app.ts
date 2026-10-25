@@ -12,6 +12,7 @@ import {
   paymentsCallbackRouter,
   paymentsRouter,
 } from "./modules/payments/payments.router.js";
+import { adminRouter } from "./modules/admin/admin.router.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { requestLog } from "./middleware/requestLog.js";
 
@@ -89,6 +90,7 @@ export function buildApp(): Express {
   app.use("/api/users", usersRouter);
   app.use("/api/reviews", reviewsRouter);
   app.use("/api/payments", paymentsRouter);
+  app.use("/api/admin", adminRouter);
 
   // ── 404 + error handler (must be last) ──────────────────────────────────
   app.use(notFoundHandler);
