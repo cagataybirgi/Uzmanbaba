@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, Clock, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, Clock, CreditCard, RotateCcw, XCircle } from "lucide-react";
 import { Tag, type TagTone } from "../../components/ds";
 import type { BookingStatus } from "../../data/bookings";
 
@@ -24,7 +24,33 @@ export function formatScheduledAt(iso: string): { date: string; time: string } {
 
 export function formatPrice(cents: number | null): string {
   if (cents === null) return "—";
-  return `₺${(cents / 100).toLocaleString("tr-TR")}`;
+  // Whole lira stay bare ("₺250"); anything with kuruş shows both digits
+  // ("₺1.250,50", never "₺1.250,5").
+  const digits = cents % 100 === 0 ? 0 : 2;
+  return `₺${(cents / 100).toLocaleString("tr-TR", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}`;
+}
+
+/** "Ödendi" — shown on both sides once the customer's card went through. */
+export function PaidTag() {
+  return (
+    <Tag tone="success" className="gap-1.5">
+      <CreditCard size={12} aria-hidden="true" />
+      Ödendi
+    </Tag>
+  );
+}
+
+/** Replaces "Ödendi" once the customer's money was sent back. */
+export function RefundTag({ state }: { state: "pending" | "done" }) {
+  return (
+    <Tag tone="neutral" className="gap-1.5">
+      <RotateCcw size={12} aria-hidden="true" />
+      {state === "done" ? "İade edildi" : "İade işleniyor"}
+    </Tag>
+  );
 }
 
 export const STATUS_CONFIG: Record<

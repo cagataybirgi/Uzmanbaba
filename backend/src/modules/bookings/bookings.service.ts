@@ -2,13 +2,24 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../../prisma.js";
 import { AppError } from "../../errors.js";
 import {
+  BOOKING_PAYMENTS_INCLUDE,
   toBookingDto,
   type BookingDto,
   type ListBookingsResponse,
 } from "./bookings.dto.js";
+import { logger } from "../../logger.js";
+import { paymentRefunder } from "../payments/payments.refunds.js";
+import {
+  notifyBookingCancelled,
+  notifyBookingConfirmed,
+  notifyBookingQuoted,
+  notifyBookingRequested,
+  notifyPaymentRefunded,
+} from "./bookings.notifications.js";
 import type {
   CreateBookingInput,
   ListMyBookingsQuery,
+  QuoteBookingInput,
 } from "./bookings.schemas.js";
 
 /* ─── create ──────────────────────────────────────────────────────────────── */
@@ -44,7 +55,7 @@ export async function createBooking(
         description: input.description,
         status: "pending",
       },
-      include: { customer: true, professional: true, review: true },
+      include: { customer: true, professional: true, review: true, payments: BOOKING_PAYMENTS_INCLUDE },
     });
 
     // Keep the customer's pendingJobs counter in step. We only bump it on
@@ -58,6 +69,7 @@ export async function createBooking(
     return booking;
   });
 
+  notifyBookingRequested(created.id);
   return toBookingDto(created);
 }
 
@@ -79,7 +91,7 @@ export async function listMyBookings(
       orderBy: { scheduledAt: "desc" },
       skip,
       take: query.pageSize,
-      include: { customer: true, professional: true, review: true },
+      include: { customer: true, professional: true, review: true, payments: BOOKING_PAYMENTS_INCLUDE },
     }),
   ]);
 
@@ -110,7 +122,7 @@ export async function listProfessionalBookings(
       orderBy: { scheduledAt: "desc" },
       skip,
       take: query.pageSize,
-      include: { customer: true, professional: true, review: true },
+      include: { customer: true, professional: true, review: true, payments: BOOKING_PAYMENTS_INCLUDE },
     }),
   ]);
 
@@ -129,6 +141,7 @@ const BOOKING_INCLUDE = {
   customer: true,
   professional: true,
   review: true,
+  payments: BOOKING_PAYMENTS_INCLUDE,
 } as const;
 
 /* ─── cancel ──────────────────────────────────────────────────────────────── */
@@ -153,13 +166,30 @@ export async function cancelBooking(
     throw AppError.badRequest("Tamamlanan rezervasyon iptal edilemez.");
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
+  // Refund policy (/iade-politikasi): every cancellation before the job
+  // starts is a full refund. Once the appointment time has passed on a paid
+  // booking, the work may have been done, so the customer can no longer
+  // undo it with one click: it goes through support instead. The
+  // professional can still cancel, which gives the customer their money
+  // back.
+  const cancelledBy = booking.customerId === userId ? "customer" : "professional";
+  if (
+    cancelledBy === "customer" &&
+    booking.paidAt &&
+    booking.scheduledAt.getTime() <= Date.now()
+  ) {
+    throw AppError.badRequest(
+      "Randevu saati geçmiş, ödenmiş bir rezervasyonu iptal edemezsin. Bir sorun varsa destek ekibimize yaz.",
+    );
+  }
+
+  const { updated, won } = await prisma.$transaction(async (tx) => {
     // Atomic guard: the status predicate is part of the WHERE, so of two
     // concurrent transitions only one gets count === 1. Without it, both
     // could pass the read-check above and each decrement pendingJobs.
     const res = await tx.booking.updateMany({
       where: { id: bookingId, status: { in: ["pending", "confirmed"] } },
-      data: { status: "cancelled" },
+      data: { status: "cancelled", cancelledBy, cancelledAt: new Date() },
     });
     if (res.count === 1) {
       await tx.user.update({
@@ -167,8 +197,34 @@ export async function cancelBooking(
         data: { pendingJobs: { decrement: 1 } },
       });
     }
-    return tx.booking.findUnique({ where: { id: bookingId }, include: BOOKING_INCLUDE });
+    const updated = await tx.booking.findUnique({
+      where: { id: bookingId },
+      include: BOOKING_INCLUDE,
+    });
+    return { updated, won: res.count === 1 };
   });
+  // Only the request that actually flipped the status tells the other side.
+  if (won) notifyBookingCancelled(bookingId);
+
+  // Cancelling is allowed after payment; the money goes back in full. Done
+  // after the commit so a rolled-back cancel can never have refunded. The
+  // refunder never throws for iyzico trouble and logs anything that needs a
+  // human, so the cancellation itself always stands.
+  if (booking.paidAt) {
+    const refunds = await paymentRefunder.refundBooking(bookingId, {
+      reason: "booking_cancelled",
+      requestedBy: userId,
+    });
+    for (const refund of refunds) {
+      if (refund.outcome === "refunded") notifyPaymentRefunded(refund.paymentId);
+    }
+    // Re-read so the response already carries the refund state.
+    const refunded = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: BOOKING_INCLUDE,
+    });
+    return toBookingDto(refunded!);
+  }
 
   return toBookingDto(updated!);
 }
@@ -195,10 +251,86 @@ export async function confirmBooking(
   }
 
   // Guarded transition — a concurrent confirm/cancel can't both win.
-  await prisma.booking.updateMany({
+  const res = await prisma.booking.updateMany({
     where: { id: bookingId, status: "pending" },
     data: { status: "confirmed" },
   });
+  if (res.count === 1) notifyBookingConfirmed(bookingId);
+  const updated = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    include: BOOKING_INCLUDE,
+  });
+  return toBookingDto(updated!);
+}
+
+/* ─── quote (professional only) ───────────────────────────────────────────── */
+
+// How long an iyzico checkout-form token stays payable after init (iyzico
+// returns tokenExpireTime = 1800s). A checkout younger than this may still
+// be completed by the customer.
+const CHECKOUT_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * The professional names a price. Allowed while the booking is unpaid and
+ * not cancelled — including after completion, so a job finished before it
+ * was priced can still be billed. Once money has moved the amount is frozen
+ * so what the customer paid always matches what the row says.
+ */
+export async function quoteBooking(
+  userId: string,
+  bookingId: string,
+  input: QuoteBookingInput,
+): Promise<BookingDto> {
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    include: BOOKING_INCLUDE,
+  });
+  if (!booking) throw AppError.notFound("Rezervasyon bulunamadı.");
+
+  if (booking.professionalId !== userId) {
+    throw AppError.forbidden("Bu rezervasyona fiyat veremezsiniz.");
+  }
+  if (booking.paidAt) {
+    throw AppError.badRequest("Ödenmiş rezervasyonun fiyatı değiştirilemez.");
+  }
+  if (booking.status === "cancelled") {
+    throw AppError.badRequest("İptal edilmiş rezervasyona fiyat verilemez.");
+  }
+
+  // A re-quote while the customer has iyzico's form open would let them pay
+  // the old amount for a booking that now says something else. Superseded
+  // attempts count: their token stays payable until it expires.
+  const liveCheckout = await prisma.payment.findFirst({
+    where: {
+      bookingId,
+      token: { not: null },
+      createdAt: { gt: new Date(Date.now() - CHECKOUT_TOKEN_TTL_MS) },
+      OR: [{ status: "pending" }, { status: "failed", errorCode: "superseded" }],
+    },
+    select: { id: true },
+  });
+  if (liveCheckout) {
+    throw AppError.conflict(
+      "Müşteri şu anda ödeme sayfasında. Fiyatı en geç 30 dakika sonra değiştirebilirsin.",
+    );
+  }
+
+  // Same guard in the WHERE so a payment landing between the read above and
+  // this write can't have its amount pulled out from under it.
+  const res = await prisma.booking.updateMany({
+    where: {
+      id: bookingId,
+      paidAt: null,
+      status: { in: ["pending", "confirmed", "completed"] },
+    },
+    data: { priceCents: input.priceCents },
+  });
+  if (res.count === 0) {
+    throw AppError.conflict("Rezervasyon bu sırada değişti. Lütfen sayfayı yenileyin.");
+  }
+  // Re-sending the same number would be noise, not news.
+  if (booking.priceCents !== input.priceCents) notifyBookingQuoted(bookingId);
+
   const updated = await prisma.booking.findUnique({
     where: { id: bookingId },
     include: BOOKING_INCLUDE,

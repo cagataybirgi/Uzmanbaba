@@ -255,6 +255,54 @@ password-reset links will be **logged to the console** instead of being
 emailed. Set `SMTP_HOST/SMTP_USER/SMTP_PASS/SMTP_PORT/SMTP_SECURE` to send
 through a real provider (e.g. SendGrid, Postmark, Resend SMTP, Mailgun).
 
+## Payments (iyzico)
+
+Card payments go through [iyzico](https://www.iyzico.com)'s hosted Checkout
+Form — the customer types their card on iyzico's page, so card data never
+reaches this server (no PCI scope).
+
+**Flow**
+
+1. Professional quotes: `PATCH /api/bookings/:id/quote` `{ priceCents }`, then confirms.
+2. Customer starts checkout: `POST /api/payments/checkout/:bookingId` →
+   `{ session: { paymentId, paymentPageUrl } }`. The frontend sends the
+   browser to `paymentPageUrl`. The amount is read from `Booking.priceCents`
+   server-side; nothing about money comes from the client.
+3. iyzico posts `token` (form-encoded, from the customer's browser) to
+   `POST /api/payments/callback`. We call iyzico back server-to-server to
+   learn the real outcome, then record it and `303`-redirect the customer to
+   `APP_URL/odeme/sonuc?payment=<id>`.
+4. The result page reads `GET /api/payments/:id`. A payment still `pending`
+   there is reconciled against iyzico on the spot, so a lost callback can't
+   strand a successful charge.
+
+**Data.** One `Payment` row per attempt (`pending → succeeded | failed`);
+`Booking.paidAt` is set exactly once, atomically, on the first success.
+`Payment.id` is sent to iyzico as `conversationId` and echoed back, which is
+how a result is matched to its row. The amount is snapshotted into the row at
+init, and a successful charge whose amount doesn't match is recorded as
+`failed` with `errorCode=amount_mismatch` (provider id kept for a manual
+refund) rather than marking the booking paid. A token whose hosted form is
+still open (iyzico error `5122`) leaves the row `pending`; a new checkout
+supersedes it.
+
+**Transport.** `src/utils/iyzico.ts` reuses the SDK's request models and
+HMAC signer but makes the HTTPS call itself, with a 20s timeout and a retry
+on transient resets — iyzico's edge drops the first one or two fresh
+connections after an idle spell (seen on both sandbox and live hosts).
+
+**Env.** `IYZICO_API_KEY`, `IYZICO_SECRET_KEY`, `IYZICO_BASE_URL`
+(`https://sandbox-api.iyzipay.com` for testing, `https://api.iyzipay.com`
+live). With the keys unset the API boots normally and checkout answers 503.
+`PUBLIC_BASE_URL` must be reachable from the customer's browser — it's where
+the callback lands.
+
+**Not yet done.** Refunds: cancelling a paid booking logs a warning and the
+refund must be issued from the iyzico panel. The buyer's `identityNumber`
+is sent as iyzico's documented placeholder since we don't collect TCKN.
+Split payouts to professionals (iyzico sub-merchants) are a separate piece of
+work; today the platform account collects everything.
+
 ## Wiring the frontend
 
 The frontend is already wired — every page goes through the shared client at

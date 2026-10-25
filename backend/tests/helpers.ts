@@ -2,6 +2,7 @@ import request, { type Response } from "supertest";
 import type { Express } from "express";
 import { buildApp } from "../src/app.js";
 import { prisma } from "../src/prisma.js";
+import { settleBookingEmails } from "../src/modules/bookings/bookings.notifications.js";
 
 /**
  * Singleton app instance for tests. supertest will wrap it in a one-off
@@ -20,11 +21,15 @@ export function getApp(): Express {
  * predictable values.
  */
 export async function resetDb(): Promise<void> {
+  // Booking emails send in the background; let the previous test's finish
+  // before their rows disappear underneath them.
+  await settleBookingEmails();
   // Order matters because of FK cascades — Review → Booking → User, etc.
   // Using TRUNCATE ... CASCADE skips dependency-ordering hassle and is the
   // fastest path in Postgres.
   await prisma.$executeRawUnsafe(
     `TRUNCATE TABLE
+       "Payment",
        "Review",
        "Booking",
        "PasswordReset",

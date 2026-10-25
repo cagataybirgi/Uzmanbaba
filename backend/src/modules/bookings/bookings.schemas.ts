@@ -29,6 +29,16 @@ export const createBookingSchema = z.object({
     .max(2000),
 });
 
+// The professional's price for the job, in kuruş. Integer cents throughout
+// so there's never a float in the money path. ₺1 floor, ₺1.000.000 ceiling.
+export const quoteBookingSchema = z.object({
+  priceCents: z
+    .number({ required_error: "Fiyat zorunlu." })
+    .int("Fiyat kuruş cinsinden tam sayı olmalı.")
+    .min(100, "Fiyat en az ₺1 olmalı.")
+    .max(100_000_000, "Fiyat en fazla ₺1.000.000 olabilir."),
+});
+
 export const listMyBookingsQuery = z.object({
   status: z.enum(BOOKING_STATUSES).optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -36,4 +46,5 @@ export const listMyBookingsQuery = z.object({
 });
 
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
+export type QuoteBookingInput = z.infer<typeof quoteBookingSchema>;
 export type ListMyBookingsQuery = z.infer<typeof listMyBookingsQuery>;

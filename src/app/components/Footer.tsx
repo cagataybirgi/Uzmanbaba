@@ -17,6 +17,7 @@ const FOOTER_LINKS = [
   { label: "İletişim", to: "/iletisim" },
   { label: "Şartlar", to: "/sartlar" },
   { label: "Gizlilik", to: "/gizlilik" },
+  { label: "İade Politikası", to: "/iade-politikasi" },
 ];
 
 const SOCIAL_LINKS = [

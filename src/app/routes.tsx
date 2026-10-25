@@ -114,6 +114,13 @@ export const routes: RouteObject[] = [
           (module) => module.Privacy,
         ),
       },
+      {
+        path: "iade-politikasi",
+        lazy: lazyPage(
+          () => import("./pages/InfoPages"),
+          (module) => module.RefundPolicy,
+        ),
+      },
 
       // Protected: requires authentication
       {
@@ -125,6 +132,21 @@ export const routes: RouteObject[] = [
             lazy: lazyPage(
               () => import("./pages/Dashboard"),
               (module) => module.Dashboard,
+            ),
+          },
+        ],
+      },
+
+      // Protected: iyzico sends the customer back here after checkout
+      {
+        path: "odeme",
+        Component: ProtectedRoute,
+        children: [
+          {
+            path: "sonuc",
+            lazy: lazyPage(
+              () => import("./pages/PaymentResult"),
+              (module) => module.PaymentResult,
             ),
           },
         ],

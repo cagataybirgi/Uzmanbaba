@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -9,10 +9,13 @@ import {
   useProfessionalBookings,
   type Booking,
 } from "../data/bookings";
+import { startCheckout } from "../data/payments";
 import { ReviewModal } from "../components/ReviewModal";
+import { QuoteModal } from "../components/QuoteModal";
 import { Button, ButtonLink, Kicker, Shell } from "../components/ds";
 import { toast } from "../lib/toast";
 import { cn } from "../components/ui/utils";
+import { formatPrice } from "./dashboard/shared";
 import { OverviewTab } from "./dashboard/OverviewTab";
 import { BookingsTab } from "./dashboard/BookingsTab";
 import { IncomingTab, type IncomingAction } from "./dashboard/IncomingTab";
@@ -58,11 +61,28 @@ export function Dashboard() {
     null,
   );
   const [reviewingBooking, setReviewingBooking] = useState<Booking | null>(null);
+  const [quotingBooking, setQuotingBooking] = useState<Booking | null>(null);
+  const [payingId, setPayingId] = useState<string | null>(null);
 
   const bookings = useMyBookings();
   // The incoming hook fires for everyone but the tab only renders for
   // professionals. The fetch is cheap (one query, scoped by userId).
   const incoming = useProfessionalBookings();
+
+  // Pressing Back on iyzico's page restores this page from the back/forward
+  // cache with its state frozen mid-redirect: the "Öde" button would spin
+  // forever and every other one stay disabled. Reset, and refresh the list
+  // in case the payment went through in the meantime.
+  const refetchBookings = bookings.refetch;
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      setPayingId(null);
+      refetchBookings();
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, [refetchBookings]);
 
   const isPro = user?.accountType === "professional";
   const visibleTabs = TABS.filter((t) => !("proOnly" in t && t.proOnly) || isPro);
@@ -120,6 +140,29 @@ export function Dashboard() {
       toast.apiError(err, "İptal edilemedi.");
     } finally {
       setCancellingId(null);
+    }
+  };
+
+  /**
+   * Customer pays. The backend decides the amount and asks iyzico for a
+   * hosted page; we hand the browser over to it. iyzico brings the customer
+   * back to /odeme/sonuc when they're done, so nothing here runs after the
+   * redirect — `payingId` only matters if the request fails.
+   */
+  const handlePay = async (booking: Booking) => {
+    if (payingId) return;
+    setPayingId(booking.id);
+    try {
+      const session = await startCheckout(booking.id);
+      if (!session.paymentPageUrl) {
+        toast.error("Ödeme sayfası açılamadı. Lütfen tekrar dene.");
+        setPayingId(null);
+        return;
+      }
+      window.location.assign(session.paymentPageUrl);
+    } catch (err) {
+      toast.apiError(err, "Ödeme başlatılamadı.");
+      setPayingId(null);
     }
   };
 
@@ -226,6 +269,8 @@ export function Dashboard() {
               onCancel={handleCancelBooking}
               cancellingId={cancellingId}
               onReview={setReviewingBooking}
+              onPay={handlePay}
+              payingId={payingId}
             />
           )}
 
@@ -237,6 +282,7 @@ export function Dashboard() {
               onRetry={incoming.refetch}
               onAction={runIncomingAction}
               mutatingId={incomingMutatingId}
+              onQuote={setQuotingBooking}
             />
           )}
 
@@ -275,6 +321,19 @@ export function Dashboard() {
         onReviewed={() => {
           setReviewingBooking(null);
           bookings.refetch();
+        }}
+      />
+
+      <QuoteModal
+        booking={quotingBooking}
+        isOpen={Boolean(quotingBooking)}
+        onClose={() => setQuotingBooking(null)}
+        onQuoted={(updated) => {
+          setQuotingBooking(null);
+          incoming.refetch();
+          toast.success(
+            `Fiyat kaydedildi: ${formatPrice(updated.priceCents)}. Müşteri onaydan sonra ödeyebilecek.`,
+          );
         }}
       />
     </Shell>
