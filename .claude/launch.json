@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "backend", "run", "dev"],
       "port": 4000
+    },
+    {
+      "name": "backend-testdb",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["backend/node_modules/tsx/dist/cli.mjs", "--env-file=backend/.env.testdb.local", "backend/src/index.ts"],
+      "port": 4000
     }
   ]
 }
