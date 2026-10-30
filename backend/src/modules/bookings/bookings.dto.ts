@@ -1,4 +1,4 @@
-import type { Booking, BookingStatus, Review, User } from "@prisma/client";
+import type { Booking, BookingStatus, PaymentStatus, Review, User } from "@prisma/client";
 import { config } from "../../config.js";
 import {
   toBookingReviewDto,
@@ -35,6 +35,14 @@ export interface BookingDto {
   scheduledAt: string;
   status: BookingStatus;
   priceCents: number | null;
+  /** Set once a payment for this booking succeeded. */
+  paidAt: string | null;
+  /**
+   * "pending" while the money is on its way back, "done" once iyzico took
+   * it back; null when nothing was refunded or a charge still stands (a
+   * refunded double charge leaves the first payment, so still just paid).
+   */
+  refund: "pending" | "done" | null;
   address: string;
   description: string;
   createdAt: string;
@@ -45,7 +53,24 @@ type BookingWithParties = Booking & {
   customer: User;
   professional: User;
   review?: Review | null;
+  payments?: Array<{ status: PaymentStatus }>;
 };
+
+/**
+ * Include for every booking query that ends in toBookingDto: only the
+ * payments that ever took money, and only their status.
+ */
+export const BOOKING_PAYMENTS_INCLUDE = {
+  where: { status: { in: ["succeeded", "refunding", "refunded"] as PaymentStatus[] } },
+  select: { status: true },
+} as const;
+
+export function refundState(payments: Array<{ status: PaymentStatus }> = []): BookingDto["refund"] {
+  if (payments.some((p) => p.status === "succeeded")) return null;
+  if (payments.some((p) => p.status === "refunding")) return "pending";
+  if (payments.some((p) => p.status === "refunded")) return "done";
+  return null;
+}
 
 const DEFAULT_AVATAR =
   "https://images.unsplash.com/photo-1649769069590-268b0b994462?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=200";
@@ -75,6 +100,8 @@ export function toBookingDto(b: BookingWithParties): BookingDto {
     scheduledAt: b.scheduledAt.toISOString(),
     status: b.status,
     priceCents: b.priceCents,
+    paidAt: b.paidAt ? b.paidAt.toISOString() : null,
+    refund: refundState(b.payments),
     address: b.address,
     description: b.description,
     createdAt: b.createdAt.toISOString(),

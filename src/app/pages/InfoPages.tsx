@@ -4,9 +4,9 @@ import { ArrowRight } from "lucide-react";
 import { ButtonLink, PageHeader, RuledRow, Shell } from "../components/ds";
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Informational pages — about, support, contact, terms, privacy.
+ * Informational pages — about, support, contact, terms, privacy, refunds.
  *
- * All five share one editorial layout: a kicker, a large flush-left title,
+ * All six share one editorial layout: a kicker, a large flush-left title,
  * a lead, then numbered ruled rows. The numbering is the structure — there
  * are no cards and no icons competing with the type.
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -208,8 +208,14 @@ export function Terms() {
           body: "Hesap bilgilerinizin güvenliğinden siz sorumlusunuz. Yanıltıcı bilgi paylaşımı, sahte değerlendirme yazma veya platform dışında ödeme talep etme yasaktır.",
         },
         {
-          title: "Hizmet Garantisi",
-          body: "Platform üzerinden yapılan rezervasyonlar memnuniyet garantisi kapsamındadır. Detaylı şartlar her hizmet kategorisine göre değişebilir.",
+          title: "Ödeme ve İade",
+          body: (
+            <>
+              Platform üzerinden yapılan ödemeler ve iptaller{" "}
+              <InlineLink to="/iade-politikasi">İade Politikamıza</InlineLink>{" "}
+              tabidir.
+            </>
+          ),
         },
       ]}
     />
@@ -244,6 +250,67 @@ export function Privacy() {
               ulaşmanız yeterli.
             </>
           ),
+        },
+      ]}
+    />
+  );
+}
+
+/* ── Refund policy ─────────────────────────────────────────────────────── */
+
+// The rules below are what the backend enforces (bookings.service
+// cancelBooking, payments.refunds). Change them together.
+export function RefundPolicy() {
+  return (
+    <InfoPage
+      kicker="Yasal"
+      title="İade Politikası"
+      lead="Ödemenizin ne zaman ve nasıl iade edildiği, açık ve kesintisiz."
+      note="Son güncelleme: 24 Ekim 2026"
+      sections={[
+        {
+          title: "Ödeme Ne Zaman Alınır",
+          body: "Uzman fiyat verip rezervasyonu onayladıktan sonra ödemeyi iyzico'nun güvenli ödeme sayfasında yaparsınız. Kart bilgileriniz UzmanBaba'ya ulaşmaz. Uzman onaylamadan veya siz ödemeden önce yapılan iptallerde kartınızdan hiçbir tutar çekilmez.",
+        },
+        {
+          title: "Hizmet Başlamadan İptal",
+          body: "Randevu saatine kadar rezervasyonunuzu panelinizden istediğiniz zaman iptal edebilirsiniz. Ödeme yaptıysanız tutarın tamamı iade edilir, herhangi bir kesinti yapılmaz. Uzman rezervasyonu iptal ederse de ödemenizin tamamı iade edilir.",
+        },
+        {
+          title: "Randevu Saatinden Sonra",
+          body: (
+            <>
+              Randevu saati geçtikten sonra hizmet başlamış sayılır ve ödenmiş
+              bir rezervasyon panelden iptal edilemez. Uzman gelmediyse veya bir
+              sorun yaşadıysanız{" "}
+              <InlineLink to="/destek">destek ekibimize</InlineLink> yazın;
+              durumu inceleyip iadenizi biz başlatırız.
+            </>
+          ),
+        },
+        {
+          title: "Şikâyet ve İtiraz",
+          body: (
+            <>
+              Hizmet tamamlandıktan sonra 7 gün içinde{" "}
+              <InlineLink to="/destek">destek</InlineLink> üzerinden şikâyet
+              bildirebilirsiniz. Her iki tarafı dinleyerek değerlendiririz;
+              şikâyetiniz haklı bulunursa ödemenizin tamamı veya bir kısmı iade
+              edilir.
+            </>
+          ),
+        },
+        {
+          title: "Otomatik İadeler",
+          body: "Aynı rezervasyon için birden fazla ödeme alınırsa fazla olan ödeme, iptal edilmiş bir rezervasyona ödeme yapılırsa o ödeme kendiliğinden iade edilir. Bunun için bir şey yapmanız gerekmez.",
+        },
+        {
+          title: "İade Süresi ve Yöntemi",
+          body: "İade, ödemenin yapıldığı karta yapılır ve iyzico üzerinden hemen gönderilir. Tutarın hesabınızda görünmesi bankanıza bağlı olarak 1–10 iş günü sürebilir. Ödeme altyapısı komisyonu sizden kesilmez; iade edilen tutar ödediğiniz tutarın tamamıdır.",
+        },
+        {
+          title: "Yasal Haklarınız",
+          body: "6502 sayılı Tüketicinin Korunması Hakkında Kanun ve Mesafeli Sözleşmeler Yönetmeliği kapsamındaki haklarınız saklıdır. Bu politika, yasal haklarınızı kısıtlamaz; yalnızca bunların ötesinde size tanıdığımız kolaylıkları açıklar.",
         },
       ]}
     />

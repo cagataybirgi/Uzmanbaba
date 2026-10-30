@@ -55,8 +55,23 @@ export async function sendEmail({ to, subject, text, html }: SendArgs): Promise<
     to,
     subject,
     text,
-    html: html ?? text,
+    html: html ?? textToHtml(text),
   });
+}
+
+/**
+ * Plain text as a safe HTML body. Booking emails carry user-typed names,
+ * addresses and descriptions; sent raw as HTML, markup in them would render
+ * in the recipient's mail client, and line breaks would collapse.
+ */
+function textToHtml(text: string): string {
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+  return `<div style="font-family: sans-serif; white-space: pre-wrap">${escaped}</div>`;
 }
 
 export function verificationEmail(code: string): { subject: string; text: string } {

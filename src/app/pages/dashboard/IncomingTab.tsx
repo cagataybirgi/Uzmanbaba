@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, CheckCheck } from "lucide-react";
+import { Banknote, Check, CheckCheck } from "lucide-react";
 import {
   Button,
   EmptyState,
@@ -14,6 +14,8 @@ import {
 import {
   formatPrice,
   formatScheduledAt,
+  PaidTag,
+  RefundTag,
   StatusFilterBar,
   StatusTag,
   type StatusFilter,
@@ -41,6 +43,7 @@ export function IncomingTab({
   onRetry,
   onAction,
   mutatingId,
+  onQuote,
 }: {
   bookings: Booking[];
   loading: boolean;
@@ -48,6 +51,8 @@ export function IncomingTab({
   onRetry: () => void;
   onAction: (id: string, action: IncomingAction) => void;
   mutatingId: string | null;
+  /** Opens the price modal for a booking. */
+  onQuote: (booking: Booking) => void;
 }) {
   const [filter, setFilter] = useState<StatusFilter>("all");
 
@@ -154,9 +159,25 @@ export function IncomingTab({
                   </Td>
                   <Td cell="actions">
                     <span className="inline-flex flex-wrap gap-2">
+                      {b.refund ? <RefundTag state={b.refund} /> : b.paidAt && <PaidTag />}
+                      {b.status !== "cancelled" && !b.paidAt && (
+                        <Button
+                          variant={b.priceCents === null ? "primary" : "secondary"}
+                          disabled={busy}
+                          onClick={() => onQuote(b)}
+                          aria-label={
+                            b.priceCents === null
+                              ? `${b.customer.name} talebine fiyat ver`
+                              : `${b.customer.name} talebinin fiyatını düzenle`
+                          }
+                        >
+                          <Banknote size={14} aria-hidden="true" />
+                          {b.priceCents === null ? "Fiyat Ver" : "Fiyatı Düzenle"}
+                        </Button>
+                      )}
                       {b.status === "pending" && (
                         <Button
-                          variant="primary"
+                          variant={b.priceCents === null ? "secondary" : "primary"}
                           disabled={busy}
                           onClick={() => onAction(b.id, "confirm")}
                           aria-label={`${b.customer.name} talebini onayla`}

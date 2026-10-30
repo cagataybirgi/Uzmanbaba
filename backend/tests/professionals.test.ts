@@ -127,7 +127,7 @@ describe("professionals", () => {
     expect(res.body.item.name).toBe("Ahmet Yılmaz");
     // Detail-page fields added to ProfessionalDto.
     expect(res.body.item).toHaveProperty("bio");
-    expect(res.body.item.completedJobs).toBe(0);
+    expect(res.body.item.completedJobs).toBe(12); // set by seedPros
     // joinDate is "Ay YYYY" in Turkish (e.g. "Haziran 2026").
     expect(res.body.item.joinDate).toMatch(/^\p{L}+ \d{4}$/u);
   });

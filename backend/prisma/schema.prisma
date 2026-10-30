@@ -31,6 +31,22 @@ enum BookingStatus {
   cancelled // either side cancelled
 }
 
+// Which side of a booking did something. Used for cancellations: the refund
+// policy treats the two sides differently, and professional cancellations
+// are worth counting.
+enum BookingParty {
+  customer
+  professional
+}
+
+enum PaymentStatus {
+  pending // checkout form initialised, customer hasn't finished
+  succeeded // iyzico confirmed the charge
+  failed // iyzico rejected it, or the attempt was abandoned/superseded
+  refunding // refund claimed by PaymentRefunder, iyzico call in flight
+  refunded // reversed after a cancellation
+}
+
 model User {
   id            String      @id @default(uuid()) @db.Uuid
   email         String      @unique
@@ -43,6 +59,10 @@ model User {
   tokenVersion  Int         @default(0)
   accountType   AccountType @default(customer)
   emailVerified Boolean     @default(false)
+  // Platform staff. Separate from accountType because an admin can still be
+  // a customer or a professional. Granted only from the command line
+  // (npm run admin:grant) — no API endpoint can set it.
+  isAdmin       Boolean     @default(false)
 
   avatar    String  @default("")
   location  String  @default("")
@@ -100,16 +120,61 @@ model Booking {
   address     String
   description String
   status      BookingStatus @default(pending)
-  priceCents  Int? // nullable until a quote is agreed
+  priceCents  Int? // nullable until the professional quotes
+
+  // Set when a Payment for this booking succeeds. Lives on the booking (not
+  // only on the Payment row) so list queries and the status guards don't
+  // need a join, and so a second checkout can't start once money has moved.
+  paidAt DateTime?
+
+  // Who cancelled, and when. Null while the booking is live.
+  cancelledBy BookingParty?
+  cancelledAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  review Review?
+  review   Review?
+  payments Payment[]
 
   @@index([customerId, createdAt])
   @@index([professionalId, createdAt])
   @@index([status])
+}
+
+// One row per checkout attempt. A booking can accumulate several (a declined
+// card, an abandoned form) but at most one ever reaches `succeeded` — the
+// service guards that through Booking.paidAt.
+//
+// `id` doubles as iyzico's `conversationId`, which is how a callback result
+// is matched back to its row without trusting anything the browser sends.
+// `amountCents` is snapshotted from the booking at init time so a later
+// re-quote can't change what the callback is verified against.
+model Payment {
+  id String @id @default(uuid()) @db.Uuid
+
+  bookingId String  @db.Uuid
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  provider    String        @default("iyzico")
+  status      PaymentStatus @default(pending)
+  amountCents Int
+  currency    String        @default("TRY")
+
+  // Checkout-form token issued by iyzico. Unique so the callback lookup is exact.
+  token                 String? @unique
+  providerPaymentId     String? // iyzico paymentId, set on success
+  providerTransactionId String? // iyzico paymentTransactionId — needed for refunds
+  errorCode             String?
+  errorMessage          String?
+  rawResult             Json? // last iyzico retrieve result, kept for audits/disputes
+
+  paidAt     DateTime?
+  refundedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([bookingId, createdAt])
 }
 
 // One review per booking, by the customer of that booking. We denormalize

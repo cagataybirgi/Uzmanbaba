@@ -40,6 +40,11 @@ All endpoints are mounted under `/api`.
 | PATCH  | `/api/bookings/:id/complete`      |  ✔   | Pro marks a booking complete             |
 | POST   | `/api/reviews`                    |  ✔   | Review a completed booking (1–5 + comment)|
 | GET    | `/api/professionals/:id/reviews`  |  —   | Public list of a pro's reviews           |
+| GET    | `/api/admin/summary`              | admin| Counts for the admin panel header        |
+| GET    | `/api/admin/users`                | admin| Users (`q`, `accountType`, paginated)    |
+| GET    | `/api/admin/bookings`             | admin| Bookings (`q`, `status`, paginated)      |
+| GET    | `/api/admin/payments`             | admin| Payments (`status`, `attention=true`)    |
+| POST   | `/api/admin/payments/:id/resolve` | admin| Settle a stuck/failed refund             |
 | GET    | `/health`                         |  —   | Liveness check                           |
 
 ### Reviews — request shapes
@@ -254,6 +259,89 @@ In development, leave `SMTP_HOST` blank in `.env`. Verification codes and
 password-reset links will be **logged to the console** instead of being
 emailed. Set `SMTP_HOST/SMTP_USER/SMTP_PASS/SMTP_PORT/SMTP_SECURE` to send
 through a real provider (e.g. SendGrid, Postmark, Resend SMTP, Mailgun).
+
+## Payments (iyzico)
+
+Card payments go through [iyzico](https://www.iyzico.com)'s hosted Checkout
+Form — the customer types their card on iyzico's page, so card data never
+reaches this server (no PCI scope).
+
+**Flow**
+
+1. Professional quotes: `PATCH /api/bookings/:id/quote` `{ priceCents }`, then confirms.
+2. Customer starts checkout: `POST /api/payments/checkout/:bookingId` →
+   `{ session: { paymentId, paymentPageUrl } }`. The frontend sends the
+   browser to `paymentPageUrl`. The amount is read from `Booking.priceCents`
+   server-side; nothing about money comes from the client.
+3. iyzico posts `token` (form-encoded, from the customer's browser) to
+   `POST /api/payments/callback`. We call iyzico back server-to-server to
+   learn the real outcome, then record it and `303`-redirect the customer to
+   `APP_URL/odeme/sonuc?payment=<id>`.
+4. The result page reads `GET /api/payments/:id`. A payment still `pending`
+   there is reconciled against iyzico on the spot, so a lost callback can't
+   strand a successful charge.
+
+**Data.** One `Payment` row per attempt (`pending → succeeded | failed`);
+`Booking.paidAt` is set exactly once, atomically, on the first success.
+`Payment.id` is sent to iyzico as `conversationId` and echoed back, which is
+how a result is matched to its row. The amount is snapshotted into the row at
+init, and a successful charge whose amount doesn't match is recorded as
+`failed` with `errorCode=amount_mismatch` (provider id kept for a manual
+refund) rather than marking the booking paid. A token whose hosted form is
+still open (iyzico error `5122`) leaves the row `pending`; a new checkout
+supersedes it.
+
+**Transport.** `src/utils/iyzico.ts` reuses the SDK's request models and
+HMAC signer but makes the HTTPS call itself, with a 20s timeout and a retry
+on transient resets — iyzico's edge drops the first one or two fresh
+connections after an idle spell (seen on both sandbox and live hosts).
+
+**Env.** `IYZICO_API_KEY`, `IYZICO_SECRET_KEY`, `IYZICO_BASE_URL`
+(`https://sandbox-api.iyzipay.com` for testing, `https://api.iyzipay.com`
+live). With the keys unset the API boots normally and checkout answers 503.
+`PUBLIC_BASE_URL` must be reachable from the customer's browser — it's where
+the callback lands.
+
+**Refunds.** Cancelling a paid booking refunds it automatically, in full
+(`PaymentRefunder` in `payments.refunds.ts`). When iyzico refuses, or the call
+breaks mid-flight, the payment shows up in the admin panel's "Müdahale
+gerekli" list — see below.
+
+**Not yet done.** The buyer's `identityNumber` is sent as iyzico's documented
+placeholder since we don't collect TCKN. Split payouts to professionals
+(iyzico sub-merchants) are a separate piece of work; today the platform
+account collects everything.
+
+## Admin panel
+
+Staff-only pages at `/yonetim` on the frontend, backed by `/api/admin/*`.
+Every admin route runs `requireAuth` + `requireAdmin`, and `requireAdmin`
+reads `User.isAdmin` from the database on each request, so revoking is
+immediate.
+
+There is deliberately no API for making someone admin. Register the account
+on the site, then from `backend/`:
+
+```bash
+npm run admin:grant -- you@example.com            # grant
+npm run admin:grant -- you@example.com --revoke   # revoke
+```
+
+It acts on whatever `DATABASE_URL` in `.env` points at.
+
+**Resolving payments.** A payment needs attention when it is stuck in
+`refunding` (refund result unknown) or `succeeded` on a cancelled booking
+(iyzico refused the refund). Look the payment up in the iyzico panel by its
+payment id, then in the admin panel choose:
+
+- **İade edildi olarak işaretle** (`mark_refunded`) — the panel shows the
+  money went back. Records it; calls nothing.
+- **İadeyi tekrar dene** (`retry_refund`) — the panel shows no refund. Puts
+  the row back to `succeeded` and runs the refunder again.
+
+A `refunding` row younger than 5 minutes can't be resolved (it may still be
+in flight). Every decision is appended to `Payment.rawResult.adminActions`
+with the admin's id, time and optional note.
 
 ## Wiring the frontend
 

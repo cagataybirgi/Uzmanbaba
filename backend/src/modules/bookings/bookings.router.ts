@@ -3,6 +3,7 @@ import { requireAuth } from "../../middleware/requireAuth.js";
 import {
   createBookingSchema,
   listMyBookingsQuery,
+  quoteBookingSchema,
 } from "./bookings.schemas.js";
 import * as svc from "./bookings.service.js";
 
@@ -66,6 +67,18 @@ bookingsRouter.patch(
   requireAuth,
   asyncHandler(async (req, res) => {
     const item = await svc.confirmBooking(req.auth!.sub, req.params.id!);
+    res.status(200).json({ item });
+  }),
+);
+
+// ── PATCH /bookings/:id/quote ───────────────────────────────────────────────
+// Professional sets (or changes) the price. Body: { priceCents }.
+bookingsRouter.patch(
+  "/:id/quote",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const input = quoteBookingSchema.parse(req.body);
+    const item = await svc.quoteBooking(req.auth!.sub, req.params.id!, input);
     res.status(200).json({ item });
   }),
 );

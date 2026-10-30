@@ -28,6 +28,8 @@ export interface User {
   phone: string;
   accountType: "customer" | "professional";
   emailVerified: boolean;
+  /** Platform staff. Optional because sessions cached before it existed lack it. */
+  isAdmin?: boolean;
   avatar: string;
   location: string;
   specialty?: string;

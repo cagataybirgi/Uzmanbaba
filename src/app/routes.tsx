@@ -114,6 +114,13 @@ export const routes: RouteObject[] = [
           (module) => module.Privacy,
         ),
       },
+      {
+        path: "iade-politikasi",
+        lazy: lazyPage(
+          () => import("./pages/InfoPages"),
+          (module) => module.RefundPolicy,
+        ),
+      },
 
       // Protected: requires authentication
       {
@@ -125,6 +132,33 @@ export const routes: RouteObject[] = [
             lazy: lazyPage(
               () => import("./pages/Dashboard"),
               (module) => module.Dashboard,
+            ),
+          },
+        ],
+      },
+
+      // Protected: staff panel. The page itself shows a 404 to non-admins.
+      {
+        path: "yonetim",
+        Component: ProtectedRoute,
+        children: [
+          {
+            index: true,
+            lazy: lazyPage(() => import("./pages/Admin"), (module) => module.Admin),
+          },
+        ],
+      },
+
+      // Protected: iyzico sends the customer back here after checkout
+      {
+        path: "odeme",
+        Component: ProtectedRoute,
+        children: [
+          {
+            path: "sonuc",
+            lazy: lazyPage(
+              () => import("./pages/PaymentResult"),
+              (module) => module.PaymentResult,
             ),
           },
         ],

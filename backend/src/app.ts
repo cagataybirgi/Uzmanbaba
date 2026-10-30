@@ -8,6 +8,11 @@ import { professionalsRouter } from "./modules/professionals/professionals.route
 import { bookingsRouter } from "./modules/bookings/bookings.router.js";
 import { usersRouter } from "./modules/users/users.router.js";
 import { reviewsRouter } from "./modules/reviews/reviews.router.js";
+import {
+  paymentsCallbackRouter,
+  paymentsRouter,
+} from "./modules/payments/payments.router.js";
+import { adminRouter } from "./modules/admin/admin.router.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { requestLog } from "./middleware/requestLog.js";
 
@@ -33,6 +38,18 @@ export function buildApp(): Express {
       crossOriginResourcePolicy: { policy: "cross-origin" },
     }),
   );
+  // Logged from here so requests rejected by CORS below still show up.
+  app.use(requestLog);
+
+  // ── Payment callback (before CORS) ───────────────────────────────────────
+  // iyzico returns the customer with a top-level form POST from its own
+  // domain, so the browser attaches `Origin: https://…iyzipay.com` (or
+  // `null` after a bank's 3DS page). The CORS check below rejects unknown
+  // origins with an error, which would leave a customer who just paid on a
+  // JSON 500. CORS is irrelevant to a navigation anyway — nothing reads the
+  // response from script — and the handler trusts nothing in the request.
+  app.use("/api/payments/callback", paymentsCallbackRouter);
+
   app.use(
     cors({
       origin: (origin, cb) => {
@@ -45,7 +62,6 @@ export function buildApp(): Express {
     }),
   );
   app.use(express.json({ limit: "100kb" }));
-  app.use(requestLog);
 
   // ── Static uploads ───────────────────────────────────────────────────────
   // Served from /uploads/* so they have the same origin as the API and the
@@ -73,6 +89,8 @@ export function buildApp(): Express {
   app.use("/api/bookings", bookingsRouter);
   app.use("/api/users", usersRouter);
   app.use("/api/reviews", reviewsRouter);
+  app.use("/api/payments", paymentsRouter);
+  app.use("/api/admin", adminRouter);
 
   // ── 404 + error handler (must be last) ──────────────────────────────────
   app.use(notFoundHandler);

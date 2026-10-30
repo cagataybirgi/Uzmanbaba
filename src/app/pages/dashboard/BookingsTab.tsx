@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Star } from "lucide-react";
+import { Link } from "react-router";
+import { CreditCard, LifeBuoy, Star } from "lucide-react";
 import {
   Button,
   ButtonLink,
@@ -16,6 +17,8 @@ import {
 import {
   formatPrice,
   formatScheduledAt,
+  PaidTag,
+  RefundTag,
   StatusFilterBar,
   StatusTag,
   type StatusFilter,
@@ -42,6 +45,8 @@ export function BookingsTab({
   onCancel,
   cancellingId,
   onReview,
+  onPay,
+  payingId,
 }: {
   bookings: Booking[];
   loading: boolean;
@@ -50,6 +55,9 @@ export function BookingsTab({
   onCancel: (id: string) => void;
   cancellingId: string | null;
   onReview: (booking: Booking) => void;
+  /** Starts checkout; the page then leaves for iyzico's hosted form. */
+  onPay: (booking: Booking) => void;
+  payingId: string | null;
 }) {
   const [filter, setFilter] = useState<StatusFilter>("all");
 
@@ -130,7 +138,19 @@ export function BookingsTab({
           <tbody>
             {filtered.map((b) => {
               const when = formatScheduledAt(b.scheduledAt);
-              const canCancel = b.status === "confirmed" || b.status === "pending";
+              // Refund policy: once the appointment time has passed on a
+              // paid booking, the customer goes through support instead.
+              const pastPaid =
+                b.paidAt !== null && new Date(b.scheduledAt).getTime() <= Date.now();
+              const open = b.status === "confirmed" || b.status === "pending";
+              const canCancel = open && !pastPaid;
+              // Payable once the professional has confirmed (or already
+              // finished the job) and quoted.
+              const canPay =
+                (b.status === "confirmed" || b.status === "completed") &&
+                b.priceCents !== null &&
+                b.paidAt === null;
+              const awaitingQuote = b.priceCents === null && b.status !== "cancelled";
               return (
                 <tr key={b.id}>
                   <Td cell="media">
@@ -150,13 +170,31 @@ export function BookingsTab({
                     {when.time}
                   </Td>
                   <Td label="Tutar" className="tnum">
-                    {formatPrice(b.priceCents)}
+                    {awaitingQuote ? (
+                      <span className="text-ink/50">Fiyat bekleniyor</span>
+                    ) : (
+                      formatPrice(b.priceCents)
+                    )}
                   </Td>
                   <Td label="Durum">
                     <StatusTag status={b.status} />
                   </Td>
                   <Td cell="actions">
                     <span className="inline-flex flex-wrap gap-2">
+                      {b.refund ? <RefundTag state={b.refund} /> : b.paidAt && <PaidTag />}
+                      {canPay && (
+                        <Button
+                          variant="primary"
+                          onClick={() => onPay(b)}
+                          loading={payingId === b.id}
+                          loadingLabel="Ödeme sayfasına gidiliyor…"
+                          disabled={payingId !== null && payingId !== b.id}
+                          aria-label={`${b.professional.name} için ${formatPrice(b.priceCents)} öde`}
+                        >
+                          <CreditCard size={13} aria-hidden="true" />
+                          Öde
+                        </Button>
+                      )}
                       {b.status === "completed" && b.review && (
                         <Tag tone="success" className="gap-1.5">
                           <Star size={12} aria-hidden="true" />
@@ -172,6 +210,16 @@ export function BookingsTab({
                           <Star size={13} aria-hidden="true" />
                           Değerlendir
                         </Button>
+                      )}
+                      {open && pastPaid && (
+                        <ButtonLink
+                          to="/destek"
+                          variant="secondary"
+                          aria-label={`${b.professional.name} rezervasyonu için destek al`}
+                        >
+                          <LifeBuoy size={13} aria-hidden="true" />
+                          Sorun Bildir
+                        </ButtonLink>
                       )}
                       {canCancel && (
                         <Button
@@ -191,6 +239,20 @@ export function BookingsTab({
             })}
           </tbody>
         </Table>
+      )}
+
+      {!error && !loading && bookings.length > 0 && (
+        <p className="t-meta mt-7">
+          Ödeme yaparak{" "}
+          <Link
+            to="/iade-politikasi"
+            className="font-semibold text-brand-800 underline underline-offset-4 hover:text-brand-700"
+          >
+            İade Politikası
+          </Link>
+          'nı kabul etmiş olursun. Randevu saatine kadar yapılan iptallerde
+          ödemenin tamamı iade edilir.
+        </p>
       )}
     </>
   );

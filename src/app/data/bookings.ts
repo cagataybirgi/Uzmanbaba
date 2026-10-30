@@ -27,6 +27,10 @@ export interface Booking {
   scheduledAt: string; // ISO
   status: BookingStatus;
   priceCents: number | null;
+  /** ISO timestamp once a payment for this booking succeeded; null until then. */
+  paidAt: string | null;
+  /** "pending" while a refund is on its way, "done" once it went through. */
+  refund: "pending" | "done" | null;
   address: string;
   description: string;
   createdAt: string;
@@ -71,6 +75,15 @@ export function confirmBooking(id: string): Promise<Booking> {
 export function completeBooking(id: string): Promise<Booking> {
   return api
     .patch<{ item: Booking }>(`/bookings/${encodeURIComponent(id)}/complete`)
+    .then((r) => r.item);
+}
+
+/** Professional sets the price. `priceCents` is integer kuruş, never a float. */
+export function quoteBooking(id: string, priceCents: number): Promise<Booking> {
+  return api
+    .patch<{ item: Booking }>(`/bookings/${encodeURIComponent(id)}/quote`, {
+      priceCents,
+    })
     .then((r) => r.item);
 }
 

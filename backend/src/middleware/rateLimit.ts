@@ -64,3 +64,19 @@ export const avatarUploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 20,
 });
+
+// Every checkout start is a row in our DB and a call to iyzico. A real
+// customer retries a handful of times at most.
+export const paymentCheckoutLimiter = rateLimit({
+  ...baseConfig,
+  windowMs: 15 * 60 * 1000,
+  limit: 15,
+});
+
+// The callback is unauthenticated by nature (iyzico → customer's browser →
+// us). Each hit costs a DB lookup and, for a real token, a call to iyzico.
+export const paymentCallbackLimiter = rateLimit({
+  ...baseConfig,
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+});

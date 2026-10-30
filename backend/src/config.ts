@@ -44,6 +44,28 @@ const envSchema = z.object({
   MAIL_FROM: z.string().default("UzmanBaba <no-reply@uzmanbaba.com>"),
 
   APP_URL: z.string().url().default("http://localhost:5173"),
+
+  // ─── Payments (iyzico) ───────────────────────────────────────────────────
+  // Both keys come from the iyzico merchant panel (sandbox or live). Leave
+  // them unset to boot without payments — the checkout endpoints then answer
+  // 503 and everything else works as before.
+  IYZICO_API_KEY: z.string().optional(),
+  IYZICO_SECRET_KEY: z.string().optional(),
+  IYZICO_BASE_URL: z
+    .string()
+    .url()
+    .default("https://sandbox-api.iyzipay.com")
+    .transform((s) => s.replace(/\/+$/, "")),
+}).superRefine((env, ctx) => {
+  // Half a credential pair is always a mistake; fail loudly at boot rather
+  // than at the first checkout.
+  if (Boolean(env.IYZICO_API_KEY) !== Boolean(env.IYZICO_SECRET_KEY)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["IYZICO_SECRET_KEY"],
+      message: "IYZICO_API_KEY and IYZICO_SECRET_KEY must be set together",
+    });
+  }
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -65,6 +87,9 @@ export const config = {
   corsOrigins: parsed.data.CORS_ORIGIN.split(",")
     .map((s) => s.trim())
     .filter(Boolean),
+  paymentsEnabled: Boolean(
+    parsed.data.IYZICO_API_KEY && parsed.data.IYZICO_SECRET_KEY,
+  ),
 };
 
 export type Config = typeof config;
